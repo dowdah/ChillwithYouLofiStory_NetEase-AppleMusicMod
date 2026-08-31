@@ -1,3 +1,5 @@
+> **使用 Mac？** 请看 [Mac 版安装与使用说明](macos/README.md)。配置完成后，直接从 Steam 启动就能使用。以下保留原作者的 Windows 版说明。
+
 # 为游戏 *Chill with You: Lo-Fi Story* 嵌入网易云音乐与 Apple Music 播放功能。
 
 
