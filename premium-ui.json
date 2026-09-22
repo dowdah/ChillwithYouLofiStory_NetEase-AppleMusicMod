@@ -1,0 +1,11 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["macos/src/MusicBridge"],
+  "locale": "zh-CN",
+  "canonicalMap": "DESIGN.md",
+  "requiredCapabilities": ["Select/Listbox", "Toast", "CRUD"],
+  "ownership": {"Select/Listbox": "authored"},
+  "requiredCommands": ["unit"],
+  "commands": {"unit": "cd macos && dotnet run --project tests"},
+  "evidence": {"failurePaths": "macos/tests/NeteaseEnhancementTests.cs", "crudFullFlow": "macos/NETEASE-PHASE1.md"}
+}

@@ -33,6 +33,6 @@ cp "$MOD_SOURCE/src/bin/Release/netstandard2.1/MusicBridge.Plugin.dll" "$DEST/Be
 cp "$MOD_SOURCE/scripts/music.js" "$DEST/BepInEx/plugins/ChillWithYouMusicBridge/"
 cp "$MOD_SOURCE/Start-Music-Mod.command" "$MOD_SOURCE/launch-core.sh" "$DEST/"
 cp "$MOD_SOURCE/README.md" "$DEST/使用说明.md"
-cp "$MOD_SOURCE/NATIVE-RUNTIME.md" "$MOD_SOURCE/TEST-REPORT.md" "$MOD_SOURCE/THIRD-PARTY-NOTICES.md" "$DEST/"
+cp "$MOD_SOURCE/NATIVE-RUNTIME.md" "$MOD_SOURCE/TEST-REPORT.md" "$MOD_SOURCE/THIRD-PARTY-NOTICES.md" "$MOD_SOURCE/NETEASE-PHASE1.md" "$DEST/"
 chmod +x "$DEST/Start-Music-Mod.command" "$DEST/launch-core.sh"
 echo "构建完成：$DEST"

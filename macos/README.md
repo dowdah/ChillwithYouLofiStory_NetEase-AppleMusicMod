@@ -5,7 +5,9 @@
 保留原插件的网易云、Apple Music 和本地音乐三个音源，把 Windows 专属的部分适配到 macOS。\
 配置好后，直接在 **Steam 点击“开始游戏”**，就会自动加载 Mod，不需要另外打开启动器。
 
-当前版本：**1.2.0.4，实验适配版**。已在 M1 Pro 上测试，网易云和 Apple Music 可用；优化后，测试者反馈流畅度明显改善。
+当前源码版本：**1.3.0.2，网易云第一批增强版，现场验收结果见下方记录**。此前1.2.0.4已在 M1 Pro 上测试，网易云和 Apple Music 可用；其验证结果不自动适用于本批新增功能。
+
+网易云第一批增强源码现已加入私人FM、喜欢双向同步、128/320 kbps和分音质缓存。其云端与游戏内验收状态独立记录在 [第一批实现与验收记录](NETEASE-PHASE1.md)；不要将下文旧版实测记录视为本批新功能已实测。
 
 ## Mac 适配新增
 
@@ -143,14 +145,14 @@ DOTNET_BIN=/absolute/path/to/dotnet ./macos/build.sh
 本地测试：
 
 ```sh
-dotnet run --project macos/tests
+(cd macos && dotnet run --project tests)
 python3 -m unittest discover -s macos/tools -p 'test_*.py'
 ```
 
 可选系统接口测试（读取音乐库、匿名联网，钥匙串使用独立临时测试条目）：
 
 ```sh
-dotnet run --project macos/tests -- --music --network --keychain
+(cd macos && dotnet run --project tests -- --music --network --keychain)
 ```
 
 撤销最近一次通过升级工具安装的版本：退出游戏后，在项目根目录执行 `python3 macos/tools/runtime_update.py rollback`。它需要已有的本地备份，不会删除音乐缓存；如果要回到不支持 Steam 接入的旧版本，请先恢复 Steam 启动选项。
