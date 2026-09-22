@@ -8,8 +8,15 @@ function run() {
         if (req.action === 'snapshot') return JSON.stringify({Valid: false});
         throw new Error('请先打开 macOS「音乐」App，再点连接。');
     }
+    function librarySource() {
+        var sources = music.sources();
+        for (var i = 0; i < sources.length; i++) {
+            if (sources[i].kind() === 'library') return sources[i];
+        }
+        throw new Error('没有找到 Apple Music 资料库来源。');
+    }
     function playlist(id) {
-        var p = music.userPlaylists.whose({persistentID: id})();
+        var p = librarySource().userPlaylists.whose({persistentID: id})();
         if (!p.length) throw new Error('歌单已改变，请更新播放列表。');
         return p[0];
     }
@@ -19,16 +26,25 @@ function run() {
         result = {version: music.version(), volume: music.soundVolume() / 100};
         break;
     case 'playlists':
-        result = music.userPlaylists().map(function(p, i) {
-            var parent = null;
-            try { parent = p.parent.persistentID(); } catch (_) {}
-            return {Name: p.name(), PersistentId: p.persistentID(), ParentId: parent,
-                IsFolder: p.class() === 'folder playlist', Order: i};
-        });
+        var rawPlaylists;
+        try { rawPlaylists = librarySource().userPlaylists.properties(); }
+        catch (e) { throw new Error('无法读取 Apple Music 用户歌单：' + e); }
+        // properties() returns plain records in one Apple Event. This avoids
+        // -1728 from stale JXA object references during per-playlist access.
+        result = rawPlaylists.reduce(function(list, p, i) {
+            if (!p || !p.persistentID) return list;
+            list.push({Name: p.name || '(未命名播放列表)', PersistentId: p.persistentID,
+                ParentId: null, IsFolder: String(p.class || '') === 'folder playlist', Order: i});
+            return list;
+        }, []);
         break;
     case 'tracks':
         var p = playlist(req.playlistId);
         // Bulk properties avoid one Apple Event per field per song.
+        if (p.tracks().length === 0) {
+            result = [];
+            break;
+        }
         var ids = p.tracks.persistentID(), names = p.tracks.name(), artists = p.tracks.artist();
         var albums = p.tracks.album(), durations = p.tracks.duration();
         if ([names, artists, albums, durations].some(function(a) { return a.length !== ids.length; }))

@@ -309,6 +309,7 @@ internal static class AppleMusicService
                 AccountName = "macOS 音乐资料库";
                 ConnState = AmConnState.Connected;
                 StatusText = "";
+                BridgeLog.Info("[AM] 已连接 macOS「音乐」自动化接口。");
                 Notify();
                 if (_autoSyncAfterConnect || !LoadPlaylists(false)) { _autoSyncAfterConnect = false; SyncLibrary(); }
                 ReadVolume();
@@ -316,6 +317,7 @@ internal static class AppleMusicService
                 if (generation != _operationGeneration) return;
                 ConnState = AmConnState.Failed;
                 StatusText = ex.Message;
+                BridgeLog.Error("[AM] 连接 macOS「音乐」失败：" + ex);
                 Notify();
             }
         });
@@ -372,6 +374,7 @@ internal static class AppleMusicService
         ScanProgress = "正在读取音乐资料库…";
         int generation = Interlocked.Increment(ref _operationGeneration);
         _playlistsLoadingOwner = generation;
+        BridgeLog.Info("[AM] 开始扫描 Apple Music 资料库。");
         Notify();
         Post(delegate {
             try {
@@ -382,8 +385,14 @@ internal static class AppleMusicService
                 if (!AppleMusicCache.Commit(playlists, AccountName, out validation))
                     throw new InvalidOperationException("歌单校验未通过；保留原有缓存。请重试。");
                 lock (Gate) { Playlists.Clear(); Playlists.AddRange(playlists); }
+                BridgeLog.Info("[AM] Apple Music 资料库扫描完成：根项目 " + playlists.Count + " 个，节点 " + validation.NodeCount + " 个，曲目 " + validation.TrackCount + " 首。");
             } catch (OperationCanceledException) { }
-            catch (Exception ex) { if (generation == _operationGeneration) PlaylistsError = ex.Message; }
+            catch (Exception ex) {
+                if (generation == _operationGeneration) {
+                    PlaylistsError = ex.Message;
+                    BridgeLog.Error("[AM] Apple Music 资料库扫描失败：" + ex);
+                }
+            }
             finally {
                 ReleasePlaylistsLoading(generation);
                 if (generation == _operationGeneration) { ScanProgress = null; Notify(); }
