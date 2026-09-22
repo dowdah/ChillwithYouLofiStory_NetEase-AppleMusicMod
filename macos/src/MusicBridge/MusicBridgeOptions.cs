@@ -67,10 +67,33 @@ internal sealed class MusicBridgeOptions
 		Report();
 	}
 
+    public static bool SaveQuality(NeteaseQuality quality, out string error)
+    {
+        error = null;
+        string path = BridgePaths.Resolve("config", "musicbridge.options.json");
+        try
+        {
+            string original = File.Exists(path) ? File.ReadAllText(path) : null;
+            var json = original == null ? JObject.FromObject(Current) : JObject.Parse(original);
+            var unknown = new List<string>(); FindUnknown(json, typeof(MusicBridgeOptions), "", unknown);
+            if (unknown.Count > 0 || json.Value<int?>("SchemaVersion") != CurrentSchemaVersion) throw new InvalidDataException();
+            var netease = json["Netease"] as JObject;
+            if (netease == null) json["Netease"] = netease = new JObject();
+            netease["PreferredQuality"] = (int)quality;
+            var candidate = new MusicBridgeOptions(); JsonConvert.PopulateObject(json.ToString(), candidate); Validate(candidate);
+            if (original != null && !File.Exists(path + ".before-netease-v1")) AtomicFile.WriteAllText(path + ".before-netease-v1", original);
+            AtomicFile.WriteAllText(path, json.ToString(Formatting.Indented));
+            Current = candidate; Source = path; return true;
+        }
+        catch { error = "音质设置保存失败，保留原设置；请检查配置和磁盘权限"; return false; }
+    }
+
 	private static void Validate(MusicBridgeOptions o)
 	{
 		RequireAllTimeSpans(o.Shared, "Shared");
 		RequireAllTimeSpans(o.Netease, "Netease");
+        Require(o.Netease.FavoritesRefreshInterval, TimeSpan.FromMinutes(1), TimeSpan.FromDays(1), "Netease.FavoritesRefreshInterval");
+        if (!Enum.IsDefined(typeof(NeteaseQuality), o.Netease.PreferredQuality)) throw new InvalidDataException("未知音质");
 		RequireAllTimeSpans(o.Apple, "Apple");
 		RequireAllTimeSpans(o.Lyrics, "Lyrics");
 		Require(o.Shared.HttpTimeout, TimeSpan.FromSeconds(1.0), TimeSpan.FromMinutes(2.0), "Shared.HttpTimeout");

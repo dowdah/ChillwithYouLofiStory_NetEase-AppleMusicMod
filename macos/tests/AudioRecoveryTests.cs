@@ -17,6 +17,31 @@ internal static class AudioRecoveryTests
             && !AudioRecoveryPolicy.IsOutputFailure("MusicBridge: FMOD failed to initialize the output device")
             && !AudioRecoveryPolicy.IsOutputFailure("Audio download failed")
             && !AudioRecoveryPolicy.IsOutputFailure(null), "only terminal silent-output failure triggers recovery; transient retries do not create a reset loop");
+        Check(AudioRecoveryPolicy.IsDeviceTransition("Default audio device was changed, but the audio system failed to initialize it. Attempting to reset sound system.")
+            && !AudioRecoveryPolicy.IsOutputFailure("Default audio device was changed, but the audio system failed to initialize it. Attempting to reset sound system."),
+            "device transition freezes track advancement without requesting a global reset");
+        var progress = new AudioPlaybackProgress();
+        progress.Reset(20, 100);
+        Check(progress.TryObserve(20.2, 100.2), "normal playback advances trusted position");
+        Check(!progress.TryObserve(240, 100.3) && Math.Abs(progress.Position - 20.2) < 0.001,
+            "headphone reconnect jump to clip end cannot become trusted EOF");
+        Check(!progress.TryObserve(0, 100.4) && progress.Position > 20,
+            "device reset to zero preserves last stable seek position");
+        progress.Reset(progress.Position, 103);
+        Check(progress.TryObserve(20.4, 103.2), "same-track reload resumes progress after device settle");
+        progress.Reset(239, 104);
+        Check(progress.TryObserve(239.5, 104.5), "explicit user seek near end remains valid");
+        Check(progress.TryObserve(240, 105), "genuine end-of-track remains observable");
+        progress.Reset(80, 200);
+        progress.Reset(80, 300);
+        Check(progress.TryObserve(80.2, 300.2), "pause and resume reseed elapsed-time tracking");
+        Check(!progress.TryObserve(double.NaN, 300.3) && !progress.TryObserve(double.PositiveInfinity, 300.3),
+            "invalid audio timestamps cannot become completion evidence");
+        float fakeSourceTime = 0;
+        AudioPlaybackProgress.ResumeAt(83.5f, () => fakeSourceTime = 0, value => fakeSourceTime = value);
+        Check(fakeSourceTime == 83.5f, "fresh Unity source resetting on Play still resumes saved paused position");
+        AudioPlaybackProgress.ResumeAt(42f, () => fakeSourceTime = 3f, value => fakeSourceTime = value);
+        Check(fakeSourceTime == 42f, "existing paused source also applies saved seek after resuming");
         var p = new AudioRecoveryPolicy();
         Check(!p.Failed && !p.TryBegin(10), "normal playback does not trigger audio resets");
         p.ReportFailure(10); p.ReportFailure(11);

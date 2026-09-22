@@ -15,6 +15,7 @@ internal static class NeteaseService
 	private static Thread _pollThread;
 
 	private static Thread _restoreThread;
+    private static NeteaseAccountContext _adoptedContext;
 
 	private static volatile NeteaseConnState _connState = NeteaseConnState.NotConnected;
 
@@ -88,7 +89,8 @@ internal static class NeteaseService
 		{
 			if (_restoreThread == null || !_restoreThread.IsAlive)
 			{
-				_restoreThread = new Thread(RestoreWorker)
+				int generation = _generation;
+                _restoreThread = new Thread(() => RestoreWorker(generation))
 				{
 					IsBackground = true,
 					Name = "MusicBridge-Restore"
@@ -98,7 +100,7 @@ internal static class NeteaseService
 		}
 	}
 
-	private static void RestoreWorker()
+	private static void RestoreWorker(int generation)
 	{
 		try
 		{
@@ -146,14 +148,15 @@ internal static class NeteaseService
 				SetConn(NeteaseConnState.SessionCorrupted, "");
 				return;
 			}
-			NeteaseApi.RestoreCookies(dictionary);
-			AccountInfo info;
-			switch (NeteaseApi.GetAccount(out info))
+			lock (Gate) { if (generation != _generation) return; NeteaseApi.RestoreCookies(dictionary); }
+            AccountInfo info;
+            var account = NeteaseApi.GetAccount(out info);
+            if (!IsCurrent(generation)) return;
+            switch (account)
 			{
 			case AccountCheck.Valid:
 				BridgeLog.Info("自动恢复成功。");
-				AdoptAccount(info);
-				SetConn(NeteaseConnState.Connected, info.Nickname);
+				AdoptAccount(info, generation);
 				break;
 			case AccountCheck.Unauthorized:
 				BridgeLog.Info("会话失效，需要重新连接（文件保留，由用户决定是否清除）。");
@@ -177,7 +180,11 @@ internal static class NeteaseService
 	}
 
 	public static void BeginLogin()
-	{
+    {
+        _adoptedContext?.Invalidate();
+        NeteaseRuntime.Shutdown();
+        AudioPlayer.Instance?.Stop();
+        NeteaseLibrary.ClearAll();
 		lock (Gate)
 		{
 			_generation++;
@@ -223,7 +230,7 @@ internal static class NeteaseService
 	{
 		try
 		{
-			NeteaseApi.ResetCookies();
+			lock (Gate) { if (gen != _generation) return; NeteaseApi.ResetCookies(); }
 			bool networkError;
 			string text = NeteaseApi.RequestUniKey(out networkError);
 			if (!IsCurrent(gen))
@@ -313,10 +320,8 @@ internal static class NeteaseService
 			SetCard(QrCardState.Failed);
 			return;
 		}
-		PersistSession(info);
-		AdoptAccount(info);
+		lock (Gate) { if (gen != _generation) return; PersistSession(info); AdoptAccount(info, gen); }
 		SetCard(QrCardState.Success);
-		SetConn(NeteaseConnState.Connected, info.Nickname);
 		lock (Gate)
 		{
 			_generation++;
@@ -327,13 +332,24 @@ internal static class NeteaseService
 		BridgeLog.Info("登录成功，二维码卡片已自动关闭，纹理已释放。");
 	}
 
-	private static void AdoptAccount(AccountInfo info)
-	{
-		NeteaseLibrary.UserId = info.UserId;
-		NeteaseLibrary.Nickname = info.Nickname;
-		BridgeLog.Info("已取得账号 userId（内容接口将使用它），开始加载歌单。");
-		NeteaseLibrary.LoadPlaylists(force: true);
-	}
+	private static void AdoptAccount(AccountInfo info, int generation)
+    {
+        NeteaseAccountContext context;
+        lock (Gate)
+        {
+            if (generation != _generation) return;
+            _adoptedContext?.Invalidate();
+            context = _adoptedContext = NeteaseApi.CaptureContext(info.UserId);
+        }
+        Plugin.RunOnMainThread(() => {
+            if (!context.Active || !ReferenceEquals(context, _adoptedContext)) return;
+            if (NeteaseLibrary.UserId != info.UserId) { AudioPlayer.Instance?.Stop(); NeteaseLibrary.ClearAll(); }
+            NeteaseLibrary.UserId = info.UserId; NeteaseLibrary.Nickname = info.Nickname;
+            NeteaseRuntime.Adopt(context);
+            SetConn(NeteaseConnState.Connected, info.Nickname);
+            NeteaseLibrary.LoadPlaylists(force: true);
+        });
+    }
 
 	private static void PersistSession(AccountInfo info)
 	{
@@ -358,7 +374,9 @@ internal static class NeteaseService
 
 	public static void Logout()
 	{
-		CancelLogin("用户退出登录");
+		_adoptedContext?.Invalidate(); _adoptedContext = null;
+        CancelLogin("用户退出登录");
+        NeteaseRuntime.Shutdown();
 		NeteaseApi.ResetCookies();
 		_nickname = "";
 		Plugin.RunOnMainThread(delegate
@@ -377,6 +395,8 @@ internal static class NeteaseService
 
 	public static void Shutdown()
 	{
+        _adoptedContext?.Invalidate(); _adoptedContext = null;
+        NeteaseRuntime.Shutdown();
 		lock (Gate)
 		{
 			_generation++;

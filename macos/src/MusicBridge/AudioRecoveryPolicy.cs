@@ -21,6 +21,12 @@ internal sealed class AudioRecoveryPolicy
             || message.StartsWith("FMOD failed to initialize the output device, attempting to initialize the null output", StringComparison.Ordinal);
     }
 
+    public static bool IsDeviceTransition(string message)
+    {
+        return !string.IsNullOrEmpty(message) && message.StartsWith(
+            "Default audio device was changed", StringComparison.Ordinal);
+    }
+
     private void RefreshWindow(double now)
     {
         while (_attemptTimes.Count > 0 && now - _attemptTimes.Peek() >= 60) _attemptTimes.Dequeue();

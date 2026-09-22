@@ -6,5 +6,6 @@ internal enum NeteaseSection
 	LikedSongs,
 	SubscribedPlaylists,
 	Search,
-	Recommend
+	Recommend,
+	PersonalFm
 }

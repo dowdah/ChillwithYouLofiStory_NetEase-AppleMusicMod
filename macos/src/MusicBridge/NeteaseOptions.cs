@@ -30,5 +30,8 @@ internal sealed class NeteaseOptions
 
 	public long SessionMaximumFileBytes = 65536L;
 
-	public bool RepeatQueue = true;
+    public bool RepeatQueue = true;
+    public NeteaseQuality PreferredQuality = NeteaseQuality.Standard;
+    public bool AutoRefreshFavorites = true;
+    public TimeSpan FavoritesRefreshInterval = TimeSpan.FromMinutes(5);
 }
