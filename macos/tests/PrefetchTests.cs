@@ -13,7 +13,11 @@ internal static class PrefetchTests
     private static void Wait(Func<bool> condition) { if (!SpinWait.SpinUntil(condition, 10000)) throw new Exception("Prefetch test deadline"); }
     public static void Run()
     {
-        Check(!new NeteaseOptions().NextAudioPreload, "prefetch default is off");
+        Check(new NeteaseOptions().NextAudioPreload, "prefetch default is on");
+        var explicitOff = new NeteaseOptions();
+        Newtonsoft.Json.JsonConvert.PopulateObject("{\"NextAudioPreload\":false}", explicitOff);
+        Check(!explicitOff.NextAudioPreload, "explicit old-config prefetch off remains off");
+        Check(new NeteaseOptions().StreamFlacDuringDownload, "FLAC streaming default is on");
         string fixture = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../test-artifacts/netease-phase2/fixtures/48000-24-2.flac"));
         foreach (bool flac in new[] { true, false })
         {

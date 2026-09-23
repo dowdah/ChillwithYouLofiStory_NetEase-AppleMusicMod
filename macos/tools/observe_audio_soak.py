@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import json
 import pathlib
+import re
 import subprocess
 import time
 
@@ -27,6 +28,10 @@ def main():
     cursor = args.log.stat().st_size if args.log else 0
     pending = b""
     ready_events = 0
+    stream_ready_events = 0
+    first_pcm_events = 0
+    stream_releases = 0
+    underruns = 0
     end_events = 0
     with args.output.open("x") as output:
         while True:
@@ -38,8 +43,13 @@ def main():
                     cursor = audio_log.tell()
                 complete, _, pending = pending.rpartition(b"\n")
                 lines = complete.decode("utf-8", errors="replace").splitlines()
-                ready_events += sum("FLAC就绪" in line or "MP3就绪" in line for line in lines)
+                ready_events += sum("FLAC就绪" in line or "FLAC流式就绪" in line or "MP3就绪" in line for line in lines)
+                stream_ready_events += sum("FLAC流式就绪" in line for line in lines)
+                first_pcm_events += sum("FLAC首次有效PCM" in line for line in lines)
+                stream_releases += sum("FLAC流式会话释放" in line for line in lines)
                 end_events += sum("FLAC有效PCM播放结束" in line for line in lines)
+                underruns += sum(int(match.group(1)) for line in lines if "FLAC有效PCM播放结束" in line
+                                 for match in [re.search(r"underruns=(\d+)", line)] if match)
                 if any(any(marker in line for marker in ("FLAC播放失败", "网易云播放未完成", "私人FM错误：")) for line in lines):
                     reason = "playback_failure_logged"
                     break
@@ -53,6 +63,8 @@ def main():
             sample = {"utc": dt.datetime.now(dt.timezone.utc).isoformat(), "elapsed_seconds": round(elapsed, 3),
                       "rss_kib": int(fields[1]), "process_age": fields[2], "cpu_time": fields[3], "open_audio_files": count,
                       "ready_events": ready_events, "flac_end_events": end_events}
+            sample.update(stream_ready_events=stream_ready_events, first_pcm_events=first_pcm_events,
+                          stream_releases=stream_releases, underruns=underruns)
             samples.append(sample)
             output.write(json.dumps(sample) + "\n")
             output.flush()
@@ -61,7 +73,9 @@ def main():
                 break
             time.sleep(min(30, args.seconds - elapsed))
     summary = {"reason": reason, "elapsed_seconds": round(time.monotonic() - start, 3), "samples": len(samples),
-               "ready_events": ready_events, "flac_end_events": end_events}
+               "ready_events": ready_events, "flac_end_events": end_events,
+               "stream_ready_events": stream_ready_events, "first_pcm_events": first_pcm_events,
+               "stream_releases": stream_releases, "underruns": underruns}
     if samples:
         summary.update(first_rss_kib=samples[0]["rss_kib"], last_rss_kib=samples[-1]["rss_kib"],
                        min_rss_kib=min(s["rss_kib"] for s in samples), max_rss_kib=max(s["rss_kib"] for s in samples),

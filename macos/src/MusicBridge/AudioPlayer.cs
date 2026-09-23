@@ -470,9 +470,13 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		};
 	}
 
-	private IEnumerator LoadAndPlay(TrackInfo track, int gen, float resumePosition = 0f, bool playAfterLoad = true, bool bypassCache = false, bool refreshedUrl = false, NeteaseQuality? attemptQuality = null)
+	private IEnumerator LoadAndPlay(TrackInfo track, int gen, float resumePosition = 0f, bool playAfterLoad = true,
+        bool bypassCache = false, bool refreshedUrl = false, NeteaseQuality? attemptQuality = null,
+        bool forceCompleteFlac = false, TimeSpan? downloadBudget = null, bool allowDownloadRetry = true)
 	{
         float loadStarted = Time.realtimeSinceStartup;
+        _flacLoadStartedTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+        _flacFirstPcmLogged = false;
 		_playAfterLoad = playAfterLoad;
 		_resumePositionAfterLoad = resumePosition;
         var context = NeteaseRuntime.Context;
@@ -552,7 +556,8 @@ internal sealed partial class AudioPlayer : MonoBehaviour
         if (lookup.Source.IsFlac)
         {
             var lease = _cacheLease; _cacheLease = null;
-            yield return LoadFlac(track, gen, context, lookup.Source, lease, resumePosition, fromCache, bypassCache, refreshedUrl, quality, loadStarted);
+            yield return LoadFlac(track, gen, context, lookup.Source, lease, resumePosition, fromCache,
+                bypassCache, refreshedUrl, quality, loadStarted, forceCompleteFlac, downloadBudget, allowDownloadRetry);
             yield break;
         }
 		BridgeLog.History("准备下载音频 songId=" + track.Id + "（协程存活，世代 " + gen + "）");

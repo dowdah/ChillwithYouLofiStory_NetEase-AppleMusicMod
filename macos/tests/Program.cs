@@ -10,6 +10,16 @@ internal static class Program
     static void Main(string[] args)
     {
         if (args.Contains("--long-flac")) { FlacTests.LongFile(); return; }
+        if (args.Contains("--progressive-core")) {
+            FlacTests.ProgressiveCore(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+                "../../../../test-artifacts/netease-phase2/fixtures/192000-16-2.flac"))); return; }
+        if (args.Contains("--progressive-http")) {
+            FlacTests.ProgressiveHttp(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+                "../../../../test-artifacts/netease-phase2/fixtures/192000-16-2.flac"))); return; }
+        if (args.Contains("--stream-benchmark")) {
+            FlacTests.BenchmarkStreaming(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+                "../../../../test-artifacts/netease-phase2/bench-60sec.flac")),
+                args.Length > 1 && int.TryParse(args[1], out int pairs) ? pairs : 20); return; }
         if (args.Length == 2 && args[0] == "--download-song") { FlacTests.ProbeSong(long.Parse(args[1])); return; }
         if (args.Length > 0 && args[0] == "--source-latency") { FlacTests.SourceLatency(args.Skip(1).Select(long.Parse).ToArray()); return; }
         if (args.Contains("--flac-download-probe")) { FlacTests.ProbeAccount(true); return; }

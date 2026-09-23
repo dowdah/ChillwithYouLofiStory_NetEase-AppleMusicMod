@@ -16,6 +16,8 @@ internal sealed class AudioFilePreparation : IDisposable
     private readonly NeteaseRequestCancellation _cancel = new NeteaseRequestCancellation();
     private AudioDiskCache.Lease _file;
     private readonly bool _fromCache, _publishCache;
+    private readonly TimeSpan? _budgetOverride;
+    private readonly bool _allowRetry;
     private int _done, _timeoutKind;
     public bool Done => Volatile.Read(ref _done) != 0;
     public string Error { get; private set; }
@@ -26,9 +28,13 @@ internal sealed class AudioFilePreparation : IDisposable
     public double DownloadSeconds { get; private set; }
     public double ValidationSeconds { get; private set; }
     public PcmFormat Format { get; private set; }
-    public AudioFilePreparation(NeteaseAccountContext context, NeteasePlaybackSource source, AudioDiskCache.Lease cached, bool publishCache = true)
+    public AudioFilePreparation(NeteaseAccountContext context, NeteasePlaybackSource source, AudioDiskCache.Lease cached,
+        bool publishCache = true) : this(context, source, cached, publishCache, null, true) { }
+    public AudioFilePreparation(NeteaseAccountContext context, NeteasePlaybackSource source, AudioDiskCache.Lease cached,
+        bool publishCache, TimeSpan? budgetOverride, bool allowRetry)
     {
         _context = context; _source = source; _file = cached; _fromCache = cached != null; _publishCache = publishCache;
+        _budgetOverride = budgetOverride; _allowRetry = allowRetry;
         new Thread(Work) { IsBackground = true, Name = "MusicBridge-FLAC-file" }.Start();
     }
     private bool Cancelled => _cancel.IsCancelled || !_context.Active;
@@ -43,12 +49,12 @@ internal sealed class AudioFilePreparation : IDisposable
             {
                 _file = AudioDiskCache.CreateTemporary();
                 var watch = Stopwatch.StartNew();
-                TimeSpan budget = _source.IsFlac ? MusicBridgeOptions.Current.Netease.FlacRequestTimeout : MusicBridgeOptions.Current.Netease.AudioRequestTimeout;
+                TimeSpan budget = _budgetOverride ?? (_source.IsFlac ? MusicBridgeOptions.Current.Netease.FlacRequestTimeout : MusicBridgeOptions.Current.Netease.AudioRequestTimeout);
                 for (int attempt = 0; ; attempt++)
                 {
                     CheckCancellation();
                     try { Download(_file.Path, budget - watch.Elapsed); break; }
-                    catch (WebException ex) when (attempt == 0 && !Cancelled && budget - watch.Elapsed > TimeSpan.FromSeconds(1) && Transient(ex.Status))
+                    catch (WebException ex) when (_allowRetry && attempt == 0 && !Cancelled && budget - watch.Elapsed > TimeSpan.FromSeconds(1) && Transient(ex.Status))
                     {
                         RetryCount = 1;
                         BridgeLog.Warn("短暂音频网络错误 songId=" + _source.SongId + " status=" + ex.Status + "，同地址重试一次，不降级或跳歌。");

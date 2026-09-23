@@ -12,6 +12,8 @@ internal sealed partial class AudioPlayer
         var options = MusicBridgeOptions.Current.Netease;
         if (!options.NextAudioPreload || context == null || !context.Active ||
             PlaybackCoordinator.Active != MusicProvider.Netease || AudioOutputRecovery.OutputUnavailable || IsBuffering ||
+            (_flacStream != null && _flacStream.Underflow) ||
+            (_progressiveSession != null && !_progressiveSession.Download.Validated) ||
             State == PlaybackState.Paused || State == PlaybackState.Idle || State == PlaybackState.Failed)
         { CancelPrefetch(); return; }
         if (State == PlaybackState.Loading)

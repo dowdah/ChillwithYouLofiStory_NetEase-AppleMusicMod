@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -37,8 +38,14 @@ internal static class FlacTests
     {
         string fixtures = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../test-artifacts/netease-phase2/fixtures"));
         Check(Directory.GetFiles(fixtures, "*.flac").Length == 16, "all real FLAC fixture combinations exist");
+        ProgressiveHttp(Path.Combine(fixtures, "192000-16-2.flac"));
+        ProgressiveTruncatedHttp(Path.Combine(fixtures, "192000-16-2.flac"));
+        ProgressiveRetryFullRecovery(Path.Combine(fixtures, "192000-16-2.flac"));
+        ProgressiveCancellation(Path.Combine(fixtures, "192000-16-2.flac"));
+        ProgressiveDelayedHeader(Path.Combine(fixtures, "48000-24-2.flac"));
         foreach (string file in Directory.GetFiles(fixtures, "*.flac"))
         {
+            ProgressiveCore(file);
             var parts = Path.GetFileNameWithoutExtension(file).Split('-').Select(int.Parse).ToArray();
             int rate = parts[0], bits = parts[1], channels = parts[2];
             var info = NativeFlacDecoder.Validate(file, () => false);
@@ -112,6 +119,370 @@ internal static class FlacTests
         ConcurrentReader(fixture);
         DownloadFailureTests();
         QualityTests();
+    }
+    public static void ProgressiveCore(string fixture)
+    {
+        var parts = Path.GetFileNameWithoutExtension(fixture).Split('-').Select(int.Parse).ToArray();
+        int rate = parts[0], bits = parts[1], channels = parts[2];
+        byte[] compressed = File.ReadAllBytes(fixture);
+        var lease = AudioDiskCache.CreateTemporary(); string path = lease.Path;
+        var growing = new GrowingFlacFile(compressed.Length + 1);
+        using var writer = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.ReadWrite);
+        int prefix = compressed.Length - 3; // End in the middle of the last compressed frame.
+        writer.Write(compressed, 0, prefix); writer.Flush(); growing.Publish(prefix);
+        var stream = new FlacPcmStream(path, null, 0, p => new NativeFlacDecoder(p, growing), growing.Interrupt);
+        try
+        {
+            Wait(() => stream.Ready || stream.Error != null);
+            Check(stream.Error == null && !growing.Complete && growing.Published < compressed.Length,
+                "real FLAC reaches two-second PCM prefill before compressed download completes");
+            stream.Enable(true);
+            var pcm = new float[4096 * channels];
+            stream.Read(pcm);
+            Check(pcm[0] == Sample(0, 0, bits) &&
+                (channels == 1 || pcm[1] == Sample(0, 1, bits)),
+                "progressive decoder outputs reference PCM before final byte arrives");
+            var stale = stream.CreateClipReader();
+            int seekFrame = rate / 8 + 127;
+            stream.Seek(seekFrame); Wait(() => stream.Ready || stream.Error != null);
+            Check(stream.Ready, "progressive decoder seeks within available PCM");
+            stream.Enable(true); stale.Read(pcm);
+            Check(pcm.All(x => x == 0), "old clip callback cannot consume PCM after progressive seek");
+            stream.Read(pcm);
+            Check(pcm[0] == Sample(seekFrame, 0, bits), "progressive seek matches reference PCM");
+            stream.Seek(rate * 3 - 11);
+            writer.Write(compressed, prefix, compressed.Length - prefix); writer.Flush();
+            growing.Publish(compressed.Length); growing.Finish();
+            Wait(() => stream.Ready || stream.Error != null);
+            Check(stream.Ready, "seek into incomplete final frame resumes after download finishes");
+            stream.Enable(true);
+            long deadline = Environment.TickCount64 + 10000;
+            while (stream.PositionFrames < stream.Format.Frames && Environment.TickCount64 < deadline)
+            {
+                long before = stream.PositionFrames;
+                stream.Read(pcm);
+                long frames = stream.PositionFrames - before;
+                for (int i = 0; i < frames; i++)
+                    for (int c = 0; c < channels; c++)
+                        if (Math.Abs(pcm[i * channels + c] - Sample(before + i, c, bits)) > 1e-7)
+                            throw new Exception("progressive PCM mismatch at frame " + (before + i));
+                if (frames == 0) Thread.Sleep(1);
+            }
+            Check(stream.PositionFrames == stream.Format.Frames && stream.Drained,
+                "growing FLAC reaches true EOF only after all PCM is consumed");
+        }
+        finally
+        {
+            stream.Dispose(); growing.Close(); Wait(() => stream.Released);
+            writer.Dispose(); lease.Dispose(); Wait(() => !File.Exists(path));
+        }
+        Check(NativeFlacDecoder.ActiveHandles == 0 && FlacPcmStream.ActiveWorkers == 0,
+            "progressive decoder releases its native handle and worker");
+    }
+    public static void ProgressiveHttp(string fixture)
+    {
+        byte[] body = File.ReadAllBytes(fixture);
+        int prefix = body.Length * 9 / 10 - 3;
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var releaseTail = new ManualResetEventSlim(false);
+        using var prefixSent = new ManualResetEventSlim(false);
+        var sender = new Thread(() => {
+            try
+            {
+                using var client = listener.AcceptTcpClient(); using var net = client.GetStream();
+                net.Read(new byte[4096], 0, 4096);
+                byte[] headers = System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: " +
+                    body.Length + "\r\nConnection: close\r\n\r\n");
+                net.Write(headers, 0, headers.Length);
+                net.Write(body, 0, prefix); net.Flush(); prefixSent.Set();
+                if (releaseTail.Wait(10000)) { net.Write(body, prefix, body.Length - prefix); net.Flush(); }
+            }
+            catch { prefixSent.Set(); }
+        }) { IsBackground = true };
+        sender.Start();
+        var source = new NeteasePlaybackSource {
+            SongId = 99887766, RequestedQuality = NeteaseQuality.HiRes, AttemptedQuality = NeteaseQuality.HiRes,
+            Format = "flac", ReturnedLevel = "hires", Bitrate = 1500000, SizeBytes = body.Length,
+            IsTrial = false, Url = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port + "/stream"
+        };
+        var context = new NeteaseAccountContext(99887766, new CookieContainer(), "");
+        ProgressiveFlacSession session = null;
+        try
+        {
+            session = new ProgressiveFlacSession(context, source, 0);
+            Check(prefixSent.Wait(1000), "throttled HTTP delivered first FLAC segment");
+            Wait(() => session.Pcm.Ready || session.Pcm.Error != null || session.Download.Error != null);
+            Check(session.Pcm.Ready && !session.Download.Downloaded && session.Growth.Published < body.Length,
+                "HTTP download remains open when real FLAC PCM is ready");
+            session.Pcm.Enable(true);
+            var pcm = new float[4096]; session.Pcm.Read(pcm);
+            Check(pcm[0] == Sample(0, 0, 16), "HTTP progressive session provides valid PCM before download completes");
+            releaseTail.Set(); Wait(() => session.Download.Done);
+            Check(session.Download.Validated && session.Download.Error == null && source.PcmFrames == 192000 * 3,
+                "completed HTTP FLAC passes full integrity validation");
+            using var hit = AudioDiskCache.TryGet(context.UserId, source);
+            Check(hit != null, "streamed FLAC is indexed only after full validation");
+        }
+        finally
+        {
+            releaseTail.Set(); session?.Dispose();
+            if (session != null) Wait(() => session.Released);
+            listener.Stop(); sender.Join(1000);
+        }
+        Check(!File.Exists(session.TemporaryPath) && ProgressiveFlacSession.ActiveSessions == 0 && NativeFlacDecoder.ActiveHandles == 0 &&
+            FlacPcmStream.ActiveWorkers == 0 && AudioDiskCache.ActiveLeases == 0,
+            "progressive HTTP session releases download, decoder and lease");
+    }
+    private static void ProgressiveDelayedHeader(string fixture)
+    {
+        byte[] bytes = File.ReadAllBytes(fixture);
+        var lease = AudioDiskCache.CreateTemporary(); string path = lease.Path;
+        var growing = new GrowingFlacFile(bytes.Length + 1);
+        using var writer = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.ReadWrite);
+        var stream = new FlacPcmStream(path, null, 0, p => new NativeFlacDecoder(p, growing), growing.Interrupt);
+        try
+        {
+            writer.Write(bytes, 0, 20); writer.Flush(); growing.Publish(20);
+            Thread.Sleep(50);
+            Check(!stream.Ready && stream.Error == null, "partial STREAMINFO waits rather than failing at temporary EOF");
+            writer.Write(bytes, 20, bytes.Length - 20); writer.Flush();
+            growing.Publish(bytes.Length); growing.Finish();
+            Wait(() => stream.Ready || stream.Error != null);
+            Check(stream.Ready && stream.Error == null, "delayed FLAC header resumes normal decode");
+        }
+        finally
+        {
+            stream.Dispose(); growing.Close(); Wait(() => stream.Released);
+            writer.Dispose(); lease.Dispose(); Wait(() => !File.Exists(path));
+        }
+        var cancelledLease = AudioDiskCache.CreateTemporary(); string cancelledPath = cancelledLease.Path;
+        using (new FileStream(cancelledPath, FileMode.CreateNew, FileAccess.Write, FileShare.ReadWrite)) { }
+        var stalled = new GrowingFlacFile(bytes.Length + 1);
+        var blockedStream = new FlacPcmStream(cancelledPath, null, 0,
+            p => new NativeFlacDecoder(p, stalled), stalled.Interrupt);
+        Thread.Sleep(50); blockedStream.Dispose(); stalled.Close();
+        Wait(() => blockedStream.Released);
+        cancelledLease.Dispose(); Wait(() => !File.Exists(cancelledPath));
+        Check(NativeFlacDecoder.ActiveHandles == 0 && FlacPcmStream.ActiveWorkers == 0,
+            "closing a stream blocked before its header releases worker and file");
+    }
+    private static void ProgressiveTruncatedHttp(string fixture)
+    {
+        byte[] body = File.ReadAllBytes(fixture);
+        int prefix = body.Length * 9 / 10 - 3;
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0); listener.Start();
+        using var stop = new ManualResetEventSlim(false);
+        var sender = new Thread(() => {
+            try
+            {
+                using var client = listener.AcceptTcpClient(); using var net = client.GetStream();
+                net.Read(new byte[4096], 0, 4096);
+                byte[] header = System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: " +
+                    body.Length + "\r\nConnection: close\r\n\r\n");
+                net.Write(header, 0, header.Length); net.Write(body, 0, prefix); net.Flush();
+                stop.Wait(10000); // Close early after the PCM reader has started.
+            }
+            catch { }
+        }) { IsBackground = true }; sender.Start();
+        var context = new NeteaseAccountContext(99887767, new CookieContainer(), "");
+        var source = new NeteasePlaybackSource { SongId = 99887767, RequestedQuality = NeteaseQuality.HiRes,
+            AttemptedQuality = NeteaseQuality.HiRes, Format = "flac", ReturnedLevel = "hires", IsTrial = false,
+            SizeBytes = body.Length, Bitrate = 1500000,
+            Url = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port + "/truncated" };
+        ProgressiveFlacSession session = null;
+        try
+        {
+            session = new ProgressiveFlacSession(context, source, 0);
+            Wait(() => session.Pcm.Ready || session.Pcm.Error != null || session.Download.Error != null);
+            Check(session.Pcm.Ready, "PCM can start before a later HTTP truncation");
+            stop.Set(); Wait(() => session.Download.Done);
+            Check(session.Download.NetworkFailure && session.Download.Retryable && !session.Download.Validated,
+                "truncated progressive response requests one transport retry, not quality fallback");
+            Check(AudioDiskCache.TryGet(context.UserId, source) == null,
+                "truncated progressive file never gets a cache index");
+        }
+        finally
+        {
+            stop.Set(); session?.Dispose(); if (session != null) Wait(() => session.Released);
+            listener.Stop(); sender.Join(1000);
+        }
+    }
+    private static void ProgressiveCancellation(string fixture)
+    {
+        byte[] body = File.ReadAllBytes(fixture);
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0); listener.Start();
+        using var entered = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        var sender = new Thread(() => {
+            try
+            {
+                using var client = listener.AcceptTcpClient(); using var net = client.GetStream();
+                net.Read(new byte[4096], 0, 4096);
+                byte[] header = System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: " +
+                    body.Length + "\r\nConnection: close\r\n\r\n");
+                net.Write(header, 0, header.Length); net.Write(body, 0, 20); net.Flush();
+                entered.Set(); release.Wait(10000);
+            }
+            catch { entered.Set(); }
+        }) { IsBackground = true }; sender.Start();
+        var source = new NeteasePlaybackSource { SongId = 99887768, Format = "flac", SizeBytes = body.Length,
+            Url = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port + "/cancel" };
+        var context = new NeteaseAccountContext(99887768, new CookieContainer(), "");
+        var session = new ProgressiveFlacSession(context, source, 0);
+        try
+        {
+            Check(entered.Wait(1000), "progressive HTTP enters a partial-header stall");
+            session.Dispose(); Wait(() => session.Released);
+            Check(!File.Exists(session.TemporaryPath) && ProgressiveFlacSession.ActiveSessions == 0 && FlacPcmStream.ActiveWorkers == 0 &&
+                NativeFlacDecoder.ActiveHandles == 0 && AudioDiskCache.ActiveLeases == 0,
+                "cancelled download and blocked decoder release without main-thread wait");
+        }
+        finally { session.Dispose(); release.Set(); listener.Stop(); sender.Join(1000); }
+    }
+    private static void ProgressiveRetryFullRecovery(string fixture)
+    {
+        byte[] body = File.ReadAllBytes(fixture);
+        int prefix = body.Length * 9 / 10 - 3;
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0); listener.Start();
+        using var releaseFirst = new ManualResetEventSlim(false);
+        int requests = 0;
+        var sender = new Thread(() => {
+            try
+            {
+                for (int attempt = 0; attempt < 2; attempt++)
+                {
+                    using var client = listener.AcceptTcpClient(); using var net = client.GetStream();
+                    net.Read(new byte[4096], 0, 4096); Interlocked.Increment(ref requests);
+                    byte[] header = System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: " +
+                        body.Length + "\r\nConnection: close\r\n\r\n");
+                    net.Write(header, 0, header.Length);
+                    if (attempt == 0) { net.Write(body, 0, prefix); net.Flush(); releaseFirst.Wait(10000); }
+                    else { net.Write(body, 0, body.Length); net.Flush(); }
+                }
+            }
+            catch { }
+        }) { IsBackground = true }; sender.Start();
+        var source = new NeteasePlaybackSource { SongId = 99887769, RequestedQuality = NeteaseQuality.HiRes,
+            AttemptedQuality = NeteaseQuality.HiRes, Format = "flac", ReturnedLevel = "hires",
+            SizeBytes = body.Length, Bitrate = 1500000, IsTrial = false,
+            Url = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port + "/retry" };
+        var context = new NeteaseAccountContext(99887769, new CookieContainer(), "");
+        ProgressiveFlacSession session = null;
+        try
+        {
+            session = new ProgressiveFlacSession(context, source, 0);
+            Wait(() => session.Pcm.Ready || session.Pcm.Error != null || session.Download.Error != null);
+            Check(session.Pcm.Ready, "first progressive attempt provides PCM before transport failure");
+            session.Pcm.Enable(true); session.Pcm.Read(new float[4096]);
+            long trustedFrame = session.Pcm.PositionFrames;
+            releaseFirst.Set(); Wait(() => session.Download.Done);
+            Check(session.Download.NetworkFailure && session.Download.Retryable && requests == 1,
+                "partial progressive response exposes one recoverable same-URL failure");
+            Check(AudioDiskCache.TryGet(context.UserId, source) == null,
+                "failed first attempt never publishes a cache entry");
+            TimeSpan remaining = TimeSpan.FromSeconds(180 - session.Download.ElapsedSeconds);
+            session.Dispose(); Wait(() => session.Released); session = null;
+            using var prepared = new AudioFilePreparation(context, source, null, true, remaining, false);
+            Wait(() => prepared.Done);
+            Check(prepared.Error == null && prepared.RetryCount == 0 && requests == 2,
+                "single complete retry uses the same URL and remaining budget");
+            var file = prepared.TakeFile();
+            var resumed = new FlacPcmStream(file.Path, file, trustedFrame);
+            try
+            {
+                Wait(() => resumed.Ready || resumed.Error != null);
+                Check(resumed.Ready, "verified complete retry can prefill from trusted frame");
+                resumed.Enable(true); var pcm = new float[4096]; resumed.Read(pcm);
+                Check(pcm[0] == Sample(trustedFrame, 0, 16), "retry resumes at trusted PCM frame");
+            }
+            finally { resumed.Dispose(); Wait(() => resumed.Released); }
+        }
+        finally
+        {
+            releaseFirst.Set(); session?.Dispose(); if (session != null) Wait(() => session.Released);
+            listener.Stop(); sender.Join(1000); AudioDiskCache.Remove(context.UserId, source);
+        }
+        Check(NativeFlacDecoder.ActiveHandles == 0 && FlacPcmStream.ActiveWorkers == 0 &&
+            AudioDiskCache.ActiveLeases == 0 && ProgressiveFlacSession.ActiveSessions == 0,
+            "same-URL retry and old partial session release all resources");
+    }
+    // Controlled synthetic-file measurement. It does not substitute for Unity audio
+    // or CDN tests, but compares the two code paths on the same limited HTTP server.
+    public static void BenchmarkStreaming(string fixture, int repetitions = 20)
+    {
+        byte[] body = File.ReadAllBytes(fixture);
+        double[] complete = new double[repetitions], streaming = new double[repetitions];
+        for (int i = 0; i < repetitions; i++)
+        {
+            complete[i] = BenchmarkOnce(body, false, i);
+            streaming[i] = BenchmarkOnce(body, true, i);
+            Console.WriteLine("BENCH pair=" + (i + 1) + " full_s=" + complete[i].ToString("F3") +
+                " stream_s=" + streaming[i].ToString("F3"));
+        }
+        Array.Sort(complete); Array.Sort(streaming);
+        int rank = (int)Math.Ceiling(repetitions * .95) - 1;
+        Console.WriteLine("BENCH P95 full_s=" + complete[rank].ToString("F3") +
+            " stream_s=" + streaming[rank].ToString("F3") +
+            " reduction_pct=" + (100 * (1 - streaming[rank] / complete[rank])).ToString("F1"));
+    }
+    private static double BenchmarkOnce(byte[] body, bool progressive, int id)
+    {
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0); listener.Start();
+        var sender = new Thread(() => {
+            try
+            {
+                using var client = listener.AcceptTcpClient(); using var net = client.GetStream();
+                net.Read(new byte[4096], 0, 4096);
+                byte[] header = System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: " +
+                    body.Length + "\r\nConnection: close\r\n\r\n");
+                net.Write(header, 0, header.Length);
+                for (int offset = 0; offset < body.Length; offset += 65536)
+                {
+                    int count = Math.Min(65536, body.Length - offset);
+                    net.Write(body, offset, count); net.Flush();
+                    Thread.Sleep(16); // Approximately 4 MiB/s, below the 180 s deadline.
+                }
+            }
+            catch { }
+        }) { IsBackground = true }; sender.Start();
+        var source = new NeteasePlaybackSource { SongId = 88000000 + id, Format = "flac",
+            SizeBytes = body.Length, Url = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port + "/bench" };
+        var context = new NeteaseAccountContext(88000000 + id, new CookieContainer(), "");
+        var clock = Stopwatch.StartNew();
+        try
+        {
+            if (progressive)
+            {
+                var session = new ProgressiveFlacSession(context, source, 0);
+                try
+                {
+                    Wait(() => session.Pcm.Ready || session.Pcm.Error != null || session.Download.Error != null);
+                    if (!session.Pcm.Ready || session.Download.Downloaded) throw new Exception("benchmark did not stream");
+                    session.Pcm.Enable(true); session.Pcm.Read(new float[4096]);
+                    if (session.Pcm.FirstPcmTicks == 0) throw new Exception("benchmark first PCM missing");
+                    return clock.Elapsed.TotalSeconds;
+                }
+                finally { session.Dispose(); Wait(() => session.Released); }
+            }
+            else
+            {
+                using var prepared = new AudioFilePreparation(context, source, null, publishCache: false);
+                Wait(() => prepared.Done);
+                if (prepared.Error != null) throw new Exception(prepared.Error);
+                var lease = prepared.TakeFile();
+                var stream = new FlacPcmStream(lease.Path, lease);
+                try
+                {
+                    Wait(() => stream.Ready || stream.Error != null);
+                    if (!stream.Ready) throw new Exception(stream.Error);
+                    stream.Enable(true); stream.Read(new float[4096]);
+                    return clock.Elapsed.TotalSeconds;
+                }
+                finally { stream.Dispose(); Wait(() => stream.Released); }
+            }
+        }
+        finally { listener.Stop(); sender.Join(1000); }
     }
     private static void CacheTests(string fixture)
     {

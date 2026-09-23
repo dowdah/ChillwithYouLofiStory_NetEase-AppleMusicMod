@@ -3,6 +3,7 @@
 Requires `flac` on the developer machine, never at runtime. No copyrighted audio.
 """
 import pathlib
+import random
 import subprocess
 import tempfile
 
@@ -30,7 +31,20 @@ def main():
                             stream.write(block)
                     subprocess.run(["flac", "--silent", "--force", "--force-raw-format", "--endian=little", "--sign=signed",
                                     f"--channels={channels}", f"--bps={bits}", f"--sample-rate={rate}", "-o", str(output), str(raw)], check=True)
+    benchmark = dest.parent / "bench-60sec.flac"
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = pathlib.Path(tmp) / "benchmark.raw"
+        rng = random.Random(20260923)
+        remaining = 60 * 48000 * 2 * 2
+        with raw.open("wb") as stream:
+            while remaining:
+                block = rng.randbytes(min(65536, remaining))
+                stream.write(block)
+                remaining -= len(block)
+        subprocess.run(["flac", "--silent", "--force", "--force-raw-format", "--endian=little", "--sign=signed",
+                        "--channels=2", "--bps=16", "--sample-rate=48000", "-o", str(benchmark), str(raw)], check=True)
     print(f"16 deterministic FLAC fixtures: {dest}")
+    print(f"60-second deterministic benchmark FLAC: {benchmark}")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 
@@ -11,9 +12,10 @@ internal sealed class FlacPcmStream : IDisposable
     private readonly string _path;
     private readonly IDisposable _fileLease;
     private readonly Func<string, INeteaseAudioDecoder> _factory;
+    private readonly Action _interrupt;
     private PcmRingBuffer _ring;
     private int _requested, _ready = -1, _readers, _closed, _released, _underflow, _enabled;
-    private long _target, _consumed, _underruns;
+    private long _target, _consumed, _underruns, _maxDecoded, _firstPcmTicks;
     private volatile bool _eof;
     private int _prebuffer;
     private static int _workers;
@@ -28,6 +30,8 @@ internal sealed class FlacPcmStream : IDisposable
     public long PositionFrames => Interlocked.Read(ref _consumed);
     public long Underruns => Interlocked.Read(ref _underruns);
     public long RequestedFrame => Interlocked.Read(ref _target);
+    public long MaximumDecodedFrame => Interlocked.Read(ref _maxDecoded);
+    public long FirstPcmTicks => Interlocked.Read(ref _firstPcmTicks);
     public int BufferedBytes => _ring == null ? 0 : _ring.Capacity * sizeof(float);
     internal sealed class ClipReader
     {
@@ -37,9 +41,9 @@ internal sealed class FlacPcmStream : IDisposable
         public void Read(float[] samples) => _stream.Read(samples, _sequence);
     }
     public ClipReader CreateClipReader() => new ClipReader(this);
-    public FlacPcmStream(string path, IDisposable lease, long startFrame = 0, Func<string, INeteaseAudioDecoder> factory = null)
+    public FlacPcmStream(string path, IDisposable lease, long startFrame = 0, Func<string, INeteaseAudioDecoder> factory = null, Action interrupt = null)
     {
-        _path = path; _fileLease = lease; _factory = factory ?? (p => new NativeFlacDecoder(p));
+        _path = path; _fileLease = lease; _factory = factory ?? (p => new NativeFlacDecoder(p)); _interrupt = interrupt;
         _target = startFrame;
         new Thread(Work) { IsBackground = true, Name = "MusicBridge-FLAC" }.Start();
     }
@@ -49,6 +53,7 @@ internal sealed class FlacPcmStream : IDisposable
         Enable(false);
         Interlocked.Exchange(ref _target, Math.Max(0, frame));
         Interlocked.Increment(ref _requested);
+        _interrupt?.Invoke();
     }
     public void ClearUnderflow() => Volatile.Write(ref _underflow, 0);
     // Called only by the audio thread. Always overwrite every scalar sample, even when
@@ -67,6 +72,7 @@ internal sealed class FlacPcmStream : IDisposable
             if (sequence != Volatile.Read(ref _requested) || Volatile.Read(ref _closed) != 0)
             { Array.Clear(samples, 0, samples.Length); return; }
             Interlocked.Add(ref _consumed, read / Format.Channels);
+            if (read > 0) Interlocked.CompareExchange(ref _firstPcmTicks, Stopwatch.GetTimestamp(), 0);
             if (read < samples.Length && !_eof && Interlocked.Exchange(ref _underflow, 1) == 0) Interlocked.Increment(ref _underruns);
         }
         finally { Interlocked.Decrement(ref _readers); }
@@ -76,7 +82,14 @@ internal sealed class FlacPcmStream : IDisposable
         Interlocked.Increment(ref _workers);
         try
         {
-            using var decoder = _factory(_path);
+            INeteaseAudioDecoder opening = null;
+            while (Volatile.Read(ref _closed) == 0 && opening == null)
+            {
+                try { opening = _factory(_path); }
+                catch (OperationCanceledException) { /* A newer seek interrupted the header read. */ }
+            }
+            if (opening == null) return;
+            using var decoder = opening;
             Format = decoder.Format;
             int capacity = checked(Format.SampleRate * Format.Channels * 8);
             if ((long)capacity * 4 + 8192 * Format.Channels * 4 > 32L * 1024 * 1024) throw new InvalidDataException("PCM缓冲超过预算");
@@ -92,15 +105,22 @@ internal sealed class FlacPcmStream : IDisposable
                     Volatile.Write(ref _ready, -1);
                     while (Volatile.Read(ref _readers) != 0) Thread.Sleep(1);
                     long target = Math.Min(Interlocked.Read(ref _target), Format.Frames - 1);
-                    decoder.Seek(target); _ring.Reset(); _eof = false;
+                    try { decoder.Seek(target); }
+                    catch (OperationCanceledException) { continue; }
+                    if (request != Volatile.Read(ref _requested) || Volatile.Read(ref _closed) != 0) continue;
+                    _ring.Reset(); _eof = false;
                     Interlocked.Exchange(ref _consumed, target); decoded = target;
                     Volatile.Write(ref _underflow, 0); applied = request;
                 }
                 int frames = Math.Min(8192, _ring.Free / Format.Channels);
                 if (!_eof && frames > 0)
                 {
-                    int count = decoder.Read(scratch, frames);
+                    int count;
+                    try { count = decoder.Read(scratch, frames); }
+                    catch (OperationCanceledException) { continue; }
+                    if (request != Volatile.Read(ref _requested) || Volatile.Read(ref _closed) != 0) continue;
                     decoded += count;
+                    if (count > 0 && decoded > Interlocked.Read(ref _maxDecoded)) Interlocked.Exchange(ref _maxDecoded, decoded);
                     if (count == 0 || decoded == Format.Frames)
                     {
                         if (decoded != Format.Frames) throw new InvalidDataException("FLAC解码提前结束");
@@ -126,5 +146,5 @@ internal sealed class FlacPcmStream : IDisposable
             }
         }
     }
-    public void Dispose() { Enable(false); Interlocked.Exchange(ref _closed, 1); }
+    public void Dispose() { Enable(false); Interlocked.Exchange(ref _closed, 1); _interrupt?.Invoke(); }
 }

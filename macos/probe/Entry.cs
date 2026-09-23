@@ -20,12 +20,57 @@ namespace Doorstop {
                     return null;
                 };
                 File.WriteAllText(Log, "Doorstop entered; pointer bytes=" + IntPtr.Size + "\n");
-                if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CHILL_PROBE_HTTP_FLAC"))) RunHttpFlac();
+                if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CHILL_PROBE_PROGRESSIVE_FLAC"))) RunProgressiveFlac();
+                else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CHILL_PROBE_HTTP_FLAC"))) RunHttpFlac();
                 else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CHILL_PROBE_FLAC"))) RunFlac();
                 else Run();
                 code = 0;
             } catch (Exception ex) { File.AppendAllText(Log, ex.ToString()); }
             finally { Environment.Exit(code); } // Never run scenes, read/write saves, or initialize Steam.
+        }
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void RunProgressiveFlac() {
+            string fixture = Environment.GetEnvironmentVariable("CHILL_PROBE_PROGRESSIVE_FLAC");
+            byte[] bytes = File.ReadAllBytes(fixture);
+            int prefix = bytes.Length - 3;
+            string path = Path.GetTempFileName();
+            File.WriteAllBytes(path, new ArraySegment<byte>(bytes, 0, prefix).ToArray());
+            var plugin = Assembly.LoadFrom(Path.GetFullPath(Path.Combine(Core, "../plugins/ChillWithYouMusicBridge/MusicBridge.Plugin.dll")));
+            var growthType = plugin.GetType("MusicBridge.GrowingFlacFile");
+            var decoderType = plugin.GetType("MusicBridge.NativeFlacDecoder");
+            var growth = Activator.CreateInstance(growthType, new object[] { (long)bytes.Length + 1 });
+            growthType.GetMethod("Publish").Invoke(growth, new object[] { (long)prefix });
+            object decoder = null;
+            try {
+                decoder = Activator.CreateInstance(decoderType, new object[] { path, growth });
+                var info = decoderType.GetProperty("Format").GetValue(decoder, null);
+                int rate = (int)info.GetType().GetField("SampleRate").GetValue(info);
+                int channels = (int)info.GetType().GetField("Channels").GetValue(info);
+                int bits = (int)info.GetType().GetField("BitsPerSample").GetValue(info);
+                float[] pcm = new float[1024 * channels];
+                int read = (int)decoderType.GetMethod("Read").Invoke(decoder, new object[] { pcm, 1024 });
+                if (read != 1024) throw new Exception("Mono progressive first read failed");
+                decoderType.GetMethod("Seek").Invoke(decoder, new object[] { (long)10000 });
+                read = (int)decoderType.GetMethod("Read").Invoke(decoder, new object[] { pcm, 1024 });
+                float expected = (float)((10000L * 31 % (1L << bits)) - (1L << (bits - 1))) / (1L << (bits - 1));
+                if (read != 1024 || Math.Abs(pcm[0] - expected) > 1e-7) throw new Exception("Mono progressive seek PCM mismatch");
+                using (var output = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite)) {
+                    output.Position = prefix; output.Write(bytes, prefix, bytes.Length - prefix); output.Flush();
+                }
+                growthType.GetMethod("Publish").Invoke(growth, new object[] { (long)bytes.Length });
+                growthType.GetMethod("Finish").Invoke(growth, null);
+                decoderType.GetMethod("Seek").Invoke(decoder, new object[] { (long)rate * 3 - 100 });
+                read = (int)decoderType.GetMethod("Read").Invoke(decoder, new object[] { pcm, 100 });
+                if (read != 100) throw new Exception("Mono progressive final seek failed");
+                File.AppendAllText(Log, "Game Mono progressive FLAC callback/read/seek passed before and after download completion; " +
+                    rate + " Hz / " + bits + " bit / " + channels + " ch.\n");
+            } finally {
+                if (decoder != null) ((IDisposable)decoder).Dispose();
+                growthType.GetMethod("Close").Invoke(growth, null); File.Delete(path);
+            }
+            if ((int)decoderType.GetProperty("ActiveHandles").GetValue(null, null) != 0)
+                throw new Exception("Game Mono leaked progressive decoder");
+            File.AppendAllText(Log, "Game Mono progressive native handles=0. No Unity audio output tested.\n");
         }
         [MethodImpl(MethodImplOptions.NoInlining)]
         static void RunHttpFlac() {
