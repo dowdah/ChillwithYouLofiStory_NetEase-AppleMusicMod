@@ -4,14 +4,14 @@ using HarmonyLib;
 
 namespace MusicBridge;
 
-[BepInPlugin("com.chillwithyou.musicbridge", "Chill With You Music Bridge", "1.3.0.2")]
+[BepInPlugin("com.chillwithyou.musicbridge", "Chill With You Music Bridge", "1.3.0.0")]
 public class Plugin : BaseUnityPlugin
 {
 	public const string PluginGuid = "com.chillwithyou.musicbridge";
 
 	public const string PluginName = "Chill With You Music Bridge";
 
-	public const string PluginVersion = "1.3.0.2";
+	public const string PluginVersion = "1.3.0.0";
 
 	private Harmony _harmony;
 
@@ -25,7 +25,7 @@ public class Plugin : BaseUnityPlugin
 		//IL_003e: Unknown result type (might be due to invalid IL or missing references)
 		//IL_0048: Expected O, but got Unknown
 		BridgeLog.Init(Logger);
-		BridgeLog.Info("Chill With You Music Bridge 1.3.0.2 macOS native port 正在通过 BepInEx 加载。");
+		BridgeLog.Info("Chill With You Music Bridge 1.3.0.0 macOS native port 正在通过 BepInEx 加载。");
 		BridgeLog.Info("插件目录已就绪（BepInEx\\plugins 下）。");
 		MusicBridgeOptions.Load();
 		try

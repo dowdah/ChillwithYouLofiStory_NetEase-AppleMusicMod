@@ -99,7 +99,7 @@ internal static partial class NeteaseApi
     }
     public static NeteaseResult<NeteasePlaybackSource> GetPlaybackSource(long id, NeteaseQuality quality, NeteaseAccountContext c, NeteaseRequestCancellation x)
     {
-        var result = Send("/weapi/song/enhance/player/url/v1", new JObject { ["ids"] = "[" + id + "]", ["level"] = quality == NeteaseQuality.Exhigh ? "exhigh" : "standard", ["encodeType"] = "mp3" }, c, x);
+        var result = Send("/weapi/song/enhance/player/url/v1", new JObject { ["ids"] = "[" + id + "]", ["level"] = NeteaseQualityPolicy.Level(quality), ["encodeType"] = NeteaseQualityPolicy.IsLossless(quality) ? "flac" : "mp3" }, c, x);
         return result.Ok ? ParsePlaybackSource(result.Value, id, quality, DateTime.UtcNow) : NeteaseResult<NeteasePlaybackSource>.Fail(result.Failure, result.Message);
     }
     internal static NeteaseResult<NeteasePlaybackSource> ParsePlaybackSource(JObject json, long id, NeteaseQuality quality, DateTime now)
@@ -118,7 +118,7 @@ internal static partial class NeteaseApi
             }
             if (song.Value<int?>("code") != 200 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https") throw new FormatException();
             string format = song.Value<string>("type");
-            if (!string.Equals(format, "mp3", StringComparison.OrdinalIgnoreCase)) return NeteaseResult<NeteasePlaybackSource>.Fail(NeteaseFailure.UnsupportedFormat, "本版本仅支持MP3，服务端返回 " + (format ?? "未知格式"));
+            if (!string.Equals(format, "mp3", StringComparison.OrdinalIgnoreCase) && !string.Equals(format, "flac", StringComparison.OrdinalIgnoreCase)) return NeteaseResult<NeteasePlaybackSource>.Fail(NeteaseFailure.UnsupportedFormat, "本版本支持MP3/FLAC，服务端返回 " + (format ?? "未知格式"));
             var trial = song["freeTrialInfo"];
             bool? isTrial = song.PropertyExists("freeTrialInfo") ? trial != null && trial.Type != JTokenType.Null : (bool?)null;
             if (trial != null && trial.Type != JTokenType.Null && !(trial is JObject)) throw new FormatException();
@@ -126,7 +126,7 @@ internal static partial class NeteaseApi
             long? size = song.Value<long?>("size"); if (size <= 0) size = null;
             double? expires = song.Value<double?>("expi");
             return NeteaseResult<NeteasePlaybackSource>.Success(new NeteasePlaybackSource {
-                SongId = id, RequestedQuality = quality, Url = url, Format = "mp3", ReturnedLevel = song.Value<string>("level"),
+                SongId = id, RequestedQuality = quality, AttemptedQuality = quality, Url = url, Format = format.ToLowerInvariant(), ReturnedLevel = song.Value<string>("level"),
                 Bitrate = bitrate, SizeBytes = size, ServerMd5 = song.Value<string>("md5"),
                 ExpiresAtUtc = expires.HasValue && expires > 0 ? now.AddSeconds(expires.Value) : (DateTime?)null,
                 IsTrial = isTrial, TrialStartSeconds = trial is JObject ? trial.Value<double?>("start") : null, TrialEndSeconds = trial is JObject ? trial.Value<double?>("end") : null

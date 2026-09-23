@@ -32,6 +32,8 @@ internal sealed class NeteasePersonalFm
     public event Action<int, int> BatchAccepted;
     public int PendingCount => _pending.Count;
     public int HistoryCount => _history.Count;
+    // Read-only prediction; never consumes a recommendation or requests another batch.
+    public TrackInfo PeekNext => _historyIndex + 1 < _history.Count ? _history[_historyIndex + 1] : _pending.Count > 0 ? _pending[0] : null;
     public event Action Changed;
     public event Action<TrackInfo> Play;
     public event Action Wait;

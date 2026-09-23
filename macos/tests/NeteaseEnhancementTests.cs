@@ -140,7 +140,7 @@ internal static class NeteaseEnhancementTests
         source = NeteaseApi.ParsePlaybackSource(response, 1, NeteaseQuality.Standard, DateTime.UtcNow);
         Check(source.Ok && source.Value.IsTrial == true && source.Value.TrialStartSeconds == 30, "trial range preserved");
         response["data"][0]["type"] = "flac";
-        Check(NeteaseApi.ParsePlaybackSource(response, 1, NeteaseQuality.Standard, DateTime.UtcNow).Failure == NeteaseFailure.UnsupportedFormat, "FLAC rejected by MPEG-only release");
+        Check(NeteaseApi.ParsePlaybackSource(response, 1, NeteaseQuality.Standard, DateTime.UtcNow).Value.IsFlac, "FLAC accepted by phase-two release");
         response["data"][0]["url"] = null; response["data"][0]["code"] = 404;
         Check(NeteaseApi.ParsePlaybackSource(response, 1, NeteaseQuality.Standard, DateTime.UtcNow).Failure == NeteaseFailure.Copyright, "copyright failure distinguished");
         response["data"][0]["code"] = -1; response["data"][0]["fee"] = 1;

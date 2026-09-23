@@ -4,7 +4,7 @@ using System.Net;
 
 namespace MusicBridge;
 
-internal enum NeteaseQuality { Standard = 128, Exhigh = 320 }
+internal enum NeteaseQuality { Standard = 128, Exhigh = 320, Lossless = 1000, HiRes = 2000 }
 internal enum NeteaseFailure { None, Network, Cancelled, Unauthorized, Rejected, Copyright, Subscription, Protocol, UnknownWrite, UnsupportedFormat }
 
 internal sealed class NeteaseResult<T>
@@ -49,10 +49,22 @@ internal sealed class NeteasePlaybackSource
     public DateTime? ExpiresAtUtc;
     public bool? IsTrial;
     public double? TrialStartSeconds, TrialEndSeconds;
+    public NeteaseQuality AttemptedQuality;
+    public int? SampleRate, BitsPerSample, Channels;
+    public long? PcmFrames;
+    public string FallbackReason;
+    public bool WasPrefetched;
+    public double UrlLookupSeconds;
+    public bool IsFlac => string.Equals(Format, "flac", StringComparison.OrdinalIgnoreCase);
     public string QualityLabel => (Format ?? "格式未知").ToUpperInvariant() + " · " +
         (Bitrate.HasValue ? (Bitrate.Value / 1000) + " kbps" : "码率未知") +
-        (Bitrate.HasValue && Bitrate.Value < (int)RequestedQuality * 1000 ? "｜首选 " + (int)RequestedQuality + "，已降级" : "") +
+        (SampleRate.HasValue ? " · " + (SampleRate.Value / 1000.0).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " kHz" : "") +
+        (BitsPerSample.HasValue ? " / " + BitsPerSample + "-bit" : "") +
+        (Channels.HasValue ? " · " + Channels + " 声道" : "") +
+        (NeteaseQualityPolicy.IsDowngraded(this) ? "｜首选 " + NeteaseQualityPolicy.Label(RequestedQuality) + "，已降级" : "") +
+        (!string.IsNullOrEmpty(FallbackReason) ? "（" + FallbackReason + "）" : "") +
         (IsTrial == true ? " · 试听" : IsTrial == null ? " · 试听状态未知" : "");
+
 }
 
 internal interface INeteaseClient

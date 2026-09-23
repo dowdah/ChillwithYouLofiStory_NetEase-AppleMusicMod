@@ -539,7 +539,7 @@ internal static class NeteasePanelUi
 		}
 	}
 
-    private static Button _quality128, _quality320, _refreshFavorites;
+    private static Button _quality128, _quality320, _qualityLossless, _qualityHiRes, _refreshFavorites;
     private static MarqueeText _qualityStatus, _favoritesStatus;
     private static NeteaseFavoriteButton _currentFavorite;
     private static string _settingsError;
@@ -552,9 +552,14 @@ internal static class NeteasePanelUi
         _quality320 = UiKit.CreatePillButton(options.transform, "320 kbps", false, UiKit.LineColor, 26f, 84f);
         _quality128.onClick.AddListener(() => ChangeQuality(NeteaseQuality.Standard));
         _quality320.onClick.AddListener(() => ChangeQuality(NeteaseQuality.Exhigh));
-        _refreshFavorites = UiKit.CreatePillButton(options.transform, "刷新云端喜欢状态", false, UiKit.LineColor, 26f, 160f);
+        _qualityLossless = UiKit.CreatePillButton(options.transform, "无损", false, UiKit.LineColor, 26f, 84f);
+        _qualityHiRes = UiKit.CreatePillButton(options.transform, "Hi-Res", false, UiKit.LineColor, 26f, 84f);
+        _qualityLossless.onClick.AddListener(() => ChangeQuality(NeteaseQuality.Lossless));
+        _qualityHiRes.onClick.AddListener(() => ChangeQuality(NeteaseQuality.HiRes));
+        var favorites = UiKit.CreateRow(parent, "NeteaseFavoritesActions", 30f, 6f);
+        _refreshFavorites = UiKit.CreatePillButton(favorites.transform, "刷新云端喜欢状态", false, UiKit.LineColor, 26f, 160f);
         _refreshFavorites.onClick.AddListener(() => NeteaseRuntime.Favorites.Refresh());
-        _currentFavorite = NeteaseFavoriteButton.Create(options.transform);
+        _currentFavorite = NeteaseFavoriteButton.Create(favorites.transform);
         var quality = UiKit.CreateStatusRowWithMarquee(parent, "NeteaseActualQuality", 22f, UiKit.GameArtistFontSize, out var qualityHead, out _qualityStatus);
         qualityHead.text = "音质 · ";
         var sync = UiKit.CreateStatusRowWithMarquee(parent, "NeteaseFavoriteStatus", 22f, UiKit.GameArtistFontSize, out var favoritesHead, out _favoritesStatus);
@@ -570,9 +575,11 @@ internal static class NeteasePanelUi
         var player = AudioPlayer.Instance; var favorites = NeteaseRuntime.Favorites; var fm = NeteaseRuntime.Fm;
         if (_quality128 != null) _quality128.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Standard;
         if (_quality320 != null) _quality320.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Exhigh;
+        if (_qualityLossless != null) _qualityLossless.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Lossless;
+        if (_qualityHiRes != null) _qualityHiRes.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.HiRes;
         if (_refreshFavorites != null) _refreshFavorites.interactable = NeteaseRuntime.Context != null && !favorites.Refreshing;
         if (_currentFavorite != null) _currentFavorite.Bind(player != null && player.CurrentTrack != null ? player.CurrentTrack.Id : 0);
-        if (_qualityStatus != null) _qualityStatus.SetContent(_settingsError ?? ((player != null ? player.PlaybackSource?.QualityLabel : null) ?? "实际音质：未加载") + " · 首选 " + (int)MusicBridgeOptions.Current.Netease.PreferredQuality + "（下次加载生效）");
+        if (_qualityStatus != null) _qualityStatus.SetContent(_settingsError ?? ((player != null ? player.PlaybackSource?.QualityLabel : null) ?? "实际音质：未加载") + (player != null && player.IsBuffering ? " · 正在缓冲…" : "") + " · 首选 " + NeteaseQualityPolicy.Label(MusicBridgeOptions.Current.Netease.PreferredQuality) + "（下次加载生效）");
         if (_favoritesStatus != null) _favoritesStatus.SetContent(favorites.Refreshing ? "正在同步云端喜欢状态…" : favorites.Error ?? (favorites.LastSuccess.HasValue ? "喜欢状态已同步 · " + favorites.LastSuccess.Value.ToLocalTime().ToString("HH:mm:ss") : "喜欢状态未知"));
         string key = fm.Active + ":" + fm.Suspended + ":" + fm.Fetching + ":" + fm.Waiting + ":" + fm.CanPrevious + ":" + fm.Current?.Id + ":" + fm.Error + ":" + fm.TrashPending + ":" + fm.TrashError;
         if (_fmUiKey != key)

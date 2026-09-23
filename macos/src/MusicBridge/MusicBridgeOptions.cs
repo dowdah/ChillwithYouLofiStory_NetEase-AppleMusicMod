@@ -108,7 +108,9 @@ internal sealed class MusicBridgeOptions
 		Require(o.Netease.SearchPageSize, 1, 100, "Netease.SearchPageSize");
 		Require(o.Netease.AudioCacheCapacityBytes, 0L, 21474836480L, "Netease.AudioCacheCapacityBytes");
 		Require(o.Netease.AudioCacheMaximumFileBytes, 1024L, 1073741824L, "Netease.AudioCacheMaximumFileBytes");
-		Require(o.Netease.SessionMaximumFileBytes, 1024L, 10485760L, "Netease.SessionMaximumFileBytes");
+		Require(o.Netease.FlacRequestTimeout, TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(15), "Netease.FlacRequestTimeout");
+        Require(o.Netease.FlacMaximumDownloadBytes, 1024L, 1073741824L, "Netease.FlacMaximumDownloadBytes");
+        Require(o.Netease.SessionMaximumFileBytes, 1024L, 10485760L, "Netease.SessionMaximumFileBytes");
 		Require(o.Shared.CoverMaximumDecodedBytes, 1048576L, 2147483648L, "Shared.CoverMaximumDecodedBytes");
 		Require(o.Shared.LogMaximumFileBytes, 65536L, 1073741824L, "Shared.LogMaximumFileBytes");
 		Require(o.Shared.LogRetainDays, 1, 365, "Shared.LogRetainDays");

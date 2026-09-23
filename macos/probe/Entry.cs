@@ -20,9 +20,77 @@ namespace Doorstop {
                     return null;
                 };
                 File.WriteAllText(Log, "Doorstop entered; pointer bytes=" + IntPtr.Size + "\n");
-                Run(); code = 0;
+                if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CHILL_PROBE_HTTP_FLAC"))) RunHttpFlac();
+                else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CHILL_PROBE_FLAC"))) RunFlac();
+                else Run();
+                code = 0;
             } catch (Exception ex) { File.AppendAllText(Log, ex.ToString()); }
             finally { Environment.Exit(code); } // Never run scenes, read/write saves, or initialize Steam.
+        }
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void RunHttpFlac() {
+            string fixture = Environment.GetEnvironmentVariable("CHILL_PROBE_HTTP_FLAC");
+            byte[] bytes = File.ReadAllBytes(fixture);
+            var server = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); server.Start();
+            int requests = 0;
+            var worker = new System.Threading.Thread(() => {
+                try {
+                    for (int i = 0; i < 2; i++) {
+                        using var client = server.AcceptTcpClient(); using var stream = client.GetStream();
+                        stream.Read(new byte[4096], 0, 4096); System.Threading.Interlocked.Increment(ref requests);
+                        byte[] header = System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: " + bytes.Length + "\r\nConnection: close\r\n\r\n");
+                        stream.Write(header, 0, header.Length); stream.Write(bytes, 0, i == 0 ? 32 : bytes.Length);
+                    }
+                } catch { }
+            }) { IsBackground = true }; worker.Start();
+            var plugin = Assembly.LoadFrom(Path.GetFullPath(Path.Combine(Core, "../plugins/ChillWithYouMusicBridge/MusicBridge.Plugin.dll")));
+            var contextType = plugin.GetType("MusicBridge.NeteaseAccountContext");
+            var context = Activator.CreateInstance(contextType, new object[] { 99001L, new System.Net.CookieContainer(), "" });
+            var sourceType = plugin.GetType("MusicBridge.NeteasePlaybackSource");
+            var source = Activator.CreateInstance(sourceType);
+            sourceType.GetField("SongId").SetValue(source, 99001L);
+            sourceType.GetField("Format").SetValue(source, "flac");
+            sourceType.GetField("SizeBytes").SetValue(source, (long)bytes.Length);
+            sourceType.GetField("Url").SetValue(source, "http://127.0.0.1:" + ((System.Net.IPEndPoint)server.LocalEndpoint).Port + "/fixture");
+            var preparationType = plugin.GetType("MusicBridge.AudioFilePreparation");
+            var preparation = Activator.CreateInstance(preparationType, new object[] { context, source, null, false });
+            try {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                while (!(bool)preparationType.GetProperty("Done").GetValue(preparation, null)) {
+                    if (watch.Elapsed.TotalSeconds > 15) throw new Exception("Mono HTTP probe deadline");
+                    System.Threading.Thread.Sleep(10);
+                }
+                var error = preparationType.GetProperty("Error").GetValue(preparation, null);
+                int retries = (int)preparationType.GetProperty("RetryCount").GetValue(preparation, null);
+                if (error != null || retries != 1 || requests != 2) throw new Exception("Mono HTTP retry failed: " + error + "; retries=" + retries + "; requests=" + requests);
+                var lease = preparationType.GetMethod("TakeFile").Invoke(preparation, null);
+                string path = (string)lease.GetType().GetProperty("Path").GetValue(lease, null);
+                ((IDisposable)lease).Dispose();
+                for (int i = 0; i < 100 && File.Exists(path); i++) System.Threading.Thread.Sleep(10);
+                if (File.Exists(path)) throw new Exception("Mono temporary file cleanup failed");
+                File.AppendAllText(Log, "Game Mono: interrupted HTTP body recovered with exactly one retry; complete FLAC validated; temporary lease removed.\n");
+            } finally { ((IDisposable)preparation).Dispose(); server.Stop(); worker.Join(1000); }
+        }
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void RunFlac() {
+            string fixture = Environment.GetEnvironmentVariable("CHILL_PROBE_FLAC");
+            var plugin = Assembly.LoadFrom(Path.GetFullPath(Path.Combine(Core, "../plugins/ChillWithYouMusicBridge/MusicBridge.Plugin.dll")));
+            var decoderType = plugin.GetType("MusicBridge.NativeFlacDecoder");
+            var format = decoderType.GetMethod("Validate").Invoke(null, new object[] { fixture, (Func<bool>)(() => false) });
+            int rate = (int)format.GetType().GetField("SampleRate").GetValue(format);
+            int channels = (int)format.GetType().GetField("Channels").GetValue(format);
+            int bits = (int)format.GetType().GetField("BitsPerSample").GetValue(format);
+            File.AppendAllText(Log, "Real game Mono: complete FLAC validation " + rate + " Hz / " + bits + " bit / " + channels + " ch\n");
+            var decoder = Activator.CreateInstance(decoderType, new object[] { fixture });
+            try {
+                decoderType.GetMethod("Seek").Invoke(decoder, new object[] { (long)10000 });
+                float[] pcm = new float[1024 * channels];
+                int read = (int)decoderType.GetMethod("Read").Invoke(decoder, new object[] { pcm, 1024 });
+                float expected = (float)((10000L * 31 % (1L << bits)) - (1L << (bits - 1))) / (1L << (bits - 1));
+                if (read != 1024 || Math.Abs(pcm[0] - expected) > 1e-7) throw new Exception("Game Mono seek PCM mismatch");
+            } finally { ((IDisposable)decoder).Dispose(); }
+            if ((int)decoderType.GetProperty("ActiveHandles").GetValue(null, null) != 0) throw new Exception("Game Mono leaked decoder");
+            File.AppendAllText(Log, "Game Mono native ABI/read/seek/close passed; active handles=0. No game scenes/audio output tested.\n");
         }
         [MethodImpl(MethodImplOptions.NoInlining)]
         static void Run() {

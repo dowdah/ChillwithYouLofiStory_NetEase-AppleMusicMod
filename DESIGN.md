@@ -14,13 +14,13 @@ Use UiKit's game font discovery and Chinese fallback. Current game title/artist 
 
 ## Layout
 
-PanelRows owns list density and virtual rows. The quality and favorite controls occupy stable rows above the list. Pending text keeps button widths fixed. FM confirmation occupies the FM content area and identifies the affected song. Preserve the existing music-panel scroll owner.
+PanelRows owns list density and virtual rows. The four quality controls and the favorite actions occupy separate stable rows above the list. Actual quality includes decoded FLAC sample rate/bit depth/channels; buffering, trial, and fallback are explicit inline text. Pending text keeps button widths fixed. FM confirmation occupies the FM content area and identifies the affected song. Preserve the existing music-panel scroll owner.
 
 ## Components
 
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 |---|---|---|---|---|
-| Select/Listbox | UiKit.CreatePillButton | NeteaseOptions.PreferredQuality | Two explicit quality choices; no popup | Option persistence tests; current in-game layout inspected, full viewport matrix pending |
+| Select/Listbox | UiKit.CreatePillButton | NeteaseOptions.PreferredQuality | Four explicit quality choices (128/320/lossless/Hi-Res); no popup | Option persistence tests; current in-game layout inspected, full viewport matrix pending |
 | Toast | NeteasePanelUi status rows | NeteaseFavorites and NeteasePersonalFm | Persistent inline status, no transient-only error | Failure state tests; normal in-game status visibility inspected |
 | CRUD | NeteaseFavoriteButton | NeteaseFavorites confirmed set and pending target | Current track and recycled song row | Late response / account / timeout tests; favorite cloud round trip passed, full recycled-row matrix pending |
 

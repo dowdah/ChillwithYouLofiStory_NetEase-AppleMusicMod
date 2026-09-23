@@ -7,7 +7,7 @@ using UnityEngine.Networking;
 
 namespace MusicBridge;
 
-internal sealed class AudioPlayer : MonoBehaviour
+internal sealed partial class AudioPlayer : MonoBehaviour
 {
 	private sealed class UrlLookupResult
 	{
@@ -122,11 +122,9 @@ internal sealed class AudioPlayer : MonoBehaviour
 	{
 		get
 		{
-			if (_source == null || _source.clip == null)
-			{
-				return 0f;
-			}
-			return _clipNeedsStart ? _lastGoodPosition : _source.time;
+            if (_flacStream != null) return (_clipNeedsStart || IsBuffering || _source.clip == null) ? _lastGoodPosition : _flacClipBase + _source.time;
+            if (_source == null || _source.clip == null) return 0f;
+            return _clipNeedsStart ? _lastGoodPosition : _source.time;
 		}
 	}
 
@@ -134,6 +132,7 @@ internal sealed class AudioPlayer : MonoBehaviour
 	{
 		get
 		{
+            if (_flacStream?.Format != null) return (float)_flacStream.Format.Duration;
 			if (_source != null && _source.clip != null && _source.clip.length > 0f)
 			{
 				return _source.clip.length;
@@ -396,7 +395,7 @@ internal sealed class AudioPlayer : MonoBehaviour
 			BridgeLog.Info("忽略重复播放请求：同一首歌已在 " + State.ToString() + "。");
 			return;
 		}
-		if (CurrentTrack != null && CurrentTrack.Id == track.Id && State == PlaybackState.Paused && _source != null && _source.clip != null)
+		if (CurrentTrack != null && CurrentTrack.Id == track.Id && State == PlaybackState.Paused && _source != null && (_source.clip != null || _flacStream != null))
 		{
 			ResumeClip();
 			State = PlaybackState.Playing;
@@ -439,8 +438,10 @@ internal sealed class AudioPlayer : MonoBehaviour
 
     private void ReportFmFailure(int generation, bool trackFailure)
     {
-        Plugin.RunOnMainThread(() => { if (generation == _generation && IsFm && !AudioOutputRecovery.OutputUnavailable)
-            NeteaseRuntime.Fm.PlaybackFailed(LastError ?? "播放失败，请重试", trackFailure); });
+        Plugin.RunOnMainThread(() => { if (generation == _generation && !AudioOutputRecovery.OutputUnavailable) {
+            BridgeLog.Warn("网易云播放未完成 songId=" + CurrentTrack?.Id + " trackFailure=" + trackFailure + " reason=" + LastError);
+            if (IsFm) NeteaseRuntime.Fm.PlaybackFailed(LastError ?? "播放失败，请重试", trackFailure);
+        } });
     }
 
 	internal bool Owns(AudioSource source) => source == _source;
@@ -469,12 +470,14 @@ internal sealed class AudioPlayer : MonoBehaviour
 		};
 	}
 
-	private IEnumerator LoadAndPlay(TrackInfo track, int gen, float resumePosition = 0f, bool playAfterLoad = true, bool bypassCache = false, bool refreshedUrl = false)
+	private IEnumerator LoadAndPlay(TrackInfo track, int gen, float resumePosition = 0f, bool playAfterLoad = true, bool bypassCache = false, bool refreshedUrl = false, NeteaseQuality? attemptQuality = null)
 	{
+        float loadStarted = Time.realtimeSinceStartup;
 		_playAfterLoad = playAfterLoad;
 		_resumePositionAfterLoad = resumePosition;
         var context = NeteaseRuntime.Context;
-        var quality = _loadedQuality;
+        var preferred = _loadedQuality;
+        var quality = attemptQuality ?? preferred;
         UrlLookupResult lookup = new UrlLookupResult();
         _lookup = lookup;
         NeteaseRequestCancellation cancellation = new NeteaseRequestCancellation();
@@ -483,15 +486,26 @@ internal sealed class AudioPlayer : MonoBehaviour
 		{
 			try
 			{
+                var lookupWatch = System.Diagnostics.Stopwatch.StartNew();
 				var result = NeteaseApi.GetPlaybackSource(track.Id, quality, context, cancellation);
+                if (result.Ok) {
+                    result.Value.UrlLookupSeconds = lookupWatch.Elapsed.TotalSeconds;
+                    result.Value.AttemptedQuality = quality;
+                    result.Value.RequestedQuality = preferred;
+                    if (quality != preferred) result.Value.FallbackReason = "高档音源不可用或解码失败";
+                }
+                AudioDiskCache.Lease cache = null;
+                if (result.Ok && !cancellation.IsCancelled && context.Active && !bypassCache)
+                    cache = _prefetch?.Take(context, result.Value) ?? AudioDiskCache.TryGet(context.UserId, result.Value);
                 lock (lookup.Gate)
                 {
                     lookup.Source = result.Value; lookup.Failure = result.Message; lookup.FailureCategory = result.Failure;
                     if (result.Ok && !cancellation.IsCancelled && context.Active)
                     {
-                        lookup.Cache = bypassCache ? null : AudioDiskCache.TryGet(context.UserId, result.Value);
+                        lookup.Cache = cache; cache = null;
                         lookup.Url = lookup.Cache?.Uri ?? result.Value.Url;
                     }
+                    cache?.Dispose();
                 }
 			}
 			catch (Exception ex4)
@@ -518,23 +532,29 @@ internal sealed class AudioPlayer : MonoBehaviour
 		{
 			_urlCancellation = null;
 		}
-		string uri = lookup.Url;
+        if (gen != _generation || context == null || !context.Active)
+        { lock (lookup.Gate) { lookup.Cache?.Dispose(); lookup.Cache = null; } yield break; }
+        string uri = lookup.Url;
         bool fromCache;
         lock (lookup.Gate) { _cacheLease = lookup.Cache; lookup.Cache = null; fromCache = _cacheLease != null; }
         _lookup = null;
         PlaybackSource = lookup.Source;
-		if (gen != _generation || context == null || !context.Active)
-		{
-			BridgeLog.Info("取址后发现已换歌（世代 " + gen + " != " + _generation + "），放弃本次加载。");
-			yield break;
-		}
+        bool needsCacheCommit = !fromCache || (_cacheLease?.DeleteOnDispose ?? false);
 		if (string.IsNullOrEmpty(uri))
 		{
-			LastError = lookup.Failure ?? "无法获取播放地址";
+			if (NeteaseQualityPolicy.CanFallback(lookup.FailureCategory) && NeteaseQualityPolicy.Lower(quality) is NeteaseQuality lower)
+            { _loadRoutine = StartCoroutine(LoadAndPlay(track, gen, resumePosition, _playAfterLoad, false, false, lower)); yield break; }
+            LastError = lookup.Failure ?? "无法获取播放地址";
             State = PlaybackState.Failed; Notify();
             ReportFmFailure(gen, lookup.FailureCategory == NeteaseFailure.Copyright || lookup.FailureCategory == NeteaseFailure.Subscription || lookup.FailureCategory == NeteaseFailure.Rejected || lookup.FailureCategory == NeteaseFailure.UnsupportedFormat);
 			yield break;
 		}
+        if (lookup.Source.IsFlac)
+        {
+            var lease = _cacheLease; _cacheLease = null;
+            yield return LoadFlac(track, gen, context, lookup.Source, lease, resumePosition, fromCache, bypassCache, refreshedUrl, quality, loadStarted);
+            yield break;
+        }
 		BridgeLog.History("准备下载音频 songId=" + track.Id + "（协程存活，世代 " + gen + "）");
 		UnityWebRequest req = null;
 		UnityWebRequestAsyncOperation op = null;
@@ -633,13 +653,13 @@ internal sealed class AudioPlayer : MonoBehaviour
 					_activeRequest = null;
 					if (gen == _generation)
 					{
-						_loadRoutine = StartCoroutine(LoadAndPlay(track, gen, resumePosition, _playAfterLoad, true, refreshedUrl));
+						_loadRoutine = StartCoroutine(LoadAndPlay(track, gen, resumePosition, _playAfterLoad, true, refreshedUrl, quality));
 					}
 					yield break;
 				}
 				if (!refreshedUrl && (req.responseCode == 401 || req.responseCode == 403 || req.responseCode == 410 || (lookup.Source.ExpiresAtUtc.HasValue && DateTime.UtcNow >= lookup.Source.ExpiresAtUtc.Value)))
                 {
-                    _loadRoutine = StartCoroutine(LoadAndPlay(track, gen, resumePosition, _playAfterLoad, bypassCache, true));
+                    _loadRoutine = StartCoroutine(LoadAndPlay(track, gen, resumePosition, _playAfterLoad, bypassCache, true, quality));
                     yield break;
                 }
                 LastError = "音频下载失败（HTTP " + req.responseCode + "）";
@@ -673,17 +693,19 @@ internal sealed class AudioPlayer : MonoBehaviour
                 if (fromCache)
                 {
                     _cacheLease?.Dispose(); _cacheLease = null; AudioDiskCache.Remove(context.UserId, lookup.Source);
-                    _loadRoutine = StartCoroutine(LoadAndPlay(track, gen, resumePosition, _playAfterLoad, true, refreshedUrl));
+                    _loadRoutine = StartCoroutine(LoadAndPlay(track, gen, resumePosition, _playAfterLoad, true, refreshedUrl, quality));
                     yield break;
                 }
-				LastError = "音频解码失败";
+				if (NeteaseQualityPolicy.Lower(quality) is NeteaseQuality lower)
+                { _loadRoutine = StartCoroutine(LoadAndPlay(track, gen, resumePosition, _playAfterLoad, false, false, lower)); yield break; }
+                LastError = "音频解码失败";
 				State = PlaybackState.Failed;
                 ReportFmFailure(gen, false);
 				Notify();
 				yield break;
 			}
             _cacheLease?.Dispose(); _cacheLease = null;
-            if (!fromCache)
+            if (needsCacheCommit)
             {
                 byte[] bytes = null;
                 try { bytes = req.downloadHandler.data; } catch { }
@@ -707,6 +729,7 @@ internal sealed class AudioPlayer : MonoBehaviour
             _progress.Reset(restoredPosition, Time.realtimeSinceStartup);
 			State = shouldPlay ? PlaybackState.Playing : PlaybackState.Paused;
             if (IsFm) NeteaseRuntime.Fm.PlaybackSucceeded();
+            BridgeLog.Info("MP3就绪 songId=" + track.Id + " prefetched=" + lookup.Source.WasPrefetched + " cache=" + fromCache);
 			int num = Mathf.RoundToInt(audioClip.length * 1000f);
 			if (lookup.Source.IsTrial != true && num > 0 && Mathf.Abs(num - track.DurationMs) > 1000)
 			{
@@ -731,11 +754,18 @@ internal sealed class AudioPlayer : MonoBehaviour
 			Notify();
 			return;
 		}
+        if (_flacStream != null && IsBuffering)
+        {
+            _flacWantsPlay = State != PlaybackState.Playing;
+            State = _flacWantsPlay ? PlaybackState.Playing : PlaybackState.Paused;
+            Notify(); return;
+        }
 		if (!(_source == null) && !(_source.clip == null))
 		{
 			if (State == PlaybackState.Playing)
 			{
 				_source.Pause();
+                _flacWantsPlay = false;
 				State = PlaybackState.Paused;
 			}
 			else if (State == PlaybackState.Paused)
@@ -750,11 +780,15 @@ internal sealed class AudioPlayer : MonoBehaviour
 
 	public void PauseIfPlaying()
 	{
+        CancelPrefetch();
         if (IsFm && !NeteaseRuntime.Fm.Suspended) NeteaseRuntime.Fm.Suspend();
 		if (State == PlaybackState.Loading) _playAfterLoad = false;
+        if (_flacStream != null && IsBuffering && State == PlaybackState.Playing)
+        { _flacWantsPlay = false; State = PlaybackState.Paused; Notify(); return; }
 		if (!(_source == null) && !(_source.clip == null) && State == PlaybackState.Playing)
 		{
 			_source.Pause();
+            _flacWantsPlay = false;
 			State = PlaybackState.Paused;
 			BridgeLog.Info("网易云让位：已暂停（保留进度）。");
 			Notify();
@@ -762,7 +796,8 @@ internal sealed class AudioPlayer : MonoBehaviour
 	}
 
 	public void Seek(float seconds)
-	{
+    {
+        if (_flacStream != null) { SeekFlac(seconds); return; }
 		if (!(_source == null) && !(_source.clip == null))
 		{
 			float time = Mathf.Clamp(seconds, 0f, Mathf.Max(0f, _source.clip.length - 0.05f));
@@ -775,7 +810,9 @@ internal sealed class AudioPlayer : MonoBehaviour
 
 	public void Stop()
 	{
+        CancelPrefetch();
         NeteaseRuntime.Fm.End(); PlaybackSource = null;
+        if (_loadRoutine != null) { StopCoroutine(_loadRoutine); _loadRoutine = null; }
 		AbortActiveRequest();
 		CancelUrlLookup();
 		_generation++;
@@ -796,6 +833,7 @@ internal sealed class AudioPlayer : MonoBehaviour
 			try
 			{
 				_activeRequest.Abort();
+                _activeRequest.Dispose();
 			}
 			catch
 			{
@@ -816,6 +854,7 @@ internal sealed class AudioPlayer : MonoBehaviour
 
     private void ResumeClip()
     {
+        if (_flacStream != null) { ResumeFlac(); return; }
         if (PlaybackCoordinator.Active != MusicProvider.Netease) return;
         float position = Mathf.Clamp(_lastGoodPosition, 0f, Mathf.Max(0f, _source.clip.length - 0.05f));
         bool start = _clipNeedsStart;
@@ -826,7 +865,8 @@ internal sealed class AudioPlayer : MonoBehaviour
     }
 
 	private void ReleaseClip()
-	{
+    {
+        CloseFlac();
         _clipNeedsStart = false;
 		if (_source != null && _source.clip != null)
 		{
@@ -838,8 +878,10 @@ internal sealed class AudioPlayer : MonoBehaviour
 
 	private void Update()
 	{
+        TickPrefetch();
 		// A null output can keep advancing time. Do not skip through the queue while recovering.
 		if (AudioOutputRecovery.OutputUnavailable) return;
+        if (_flacStream != null) { UpdateFlac(); return; }
 		if (State == PlaybackState.Playing && _source != null && _source.clip != null)
 		{
 			if (_source.isPlaying)
@@ -925,7 +967,8 @@ internal sealed class AudioPlayer : MonoBehaviour
 	}
 
 	private void OnApplicationQuit()
-	{
+    {
+        Stop();
 		BridgeLog.Info("游戏退出：停止 MusicBridge 音频与下载。");
 		AbortActiveRequest();
 		CancelUrlLookup();
@@ -938,6 +981,7 @@ internal sealed class AudioPlayer : MonoBehaviour
 
 	private void OnDestroy()
 	{
+        CancelPrefetch();
 		AbortActiveRequest();
 		CancelUrlLookup();
 		_generation++;
