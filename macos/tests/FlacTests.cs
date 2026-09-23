@@ -43,6 +43,7 @@ internal static class FlacTests
         ProgressiveRetryFullRecovery(Path.Combine(fixtures, "192000-16-2.flac"));
         ProgressiveCancellation(Path.Combine(fixtures, "192000-16-2.flac"));
         ProgressiveDelayedHeader(Path.Combine(fixtures, "48000-24-2.flac"));
+        ProgressiveUnderflowRecovery(Path.Combine(fixtures, "192000-16-2.flac"));
         foreach (string file in Directory.GetFiles(fixtures, "*.flac"))
         {
             ProgressiveCore(file);
@@ -266,6 +267,41 @@ internal static class FlacTests
         cancelledLease.Dispose(); Wait(() => !File.Exists(cancelledPath));
         Check(NativeFlacDecoder.ActiveHandles == 0 && FlacPcmStream.ActiveWorkers == 0,
             "closing a stream blocked before its header releases worker and file");
+    }
+    private static void ProgressiveUnderflowRecovery(string fixture)
+    {
+        byte[] bytes = File.ReadAllBytes(fixture);
+        int prefix = bytes.Length * 9 / 10 - 3;
+        var lease = AudioDiskCache.CreateTemporary(); string path = lease.Path;
+        var growing = new GrowingFlacFile(bytes.Length + 1);
+        using var writer = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.ReadWrite);
+        writer.Write(bytes, 0, prefix); writer.Flush(); growing.Publish(prefix);
+        var stream = new FlacPcmStream(path, null, 0, p => new NativeFlacDecoder(p, growing), growing.Interrupt);
+        try
+        {
+            Wait(() => stream.Ready || stream.Error != null);
+            Check(stream.Ready, "slow FLAC can prefill before its response ends");
+            var stale = stream.CreateClipReader();
+            stream.Enable(true);
+            var pcm = new float[8192];
+            for (int i = 0; i < 1000 && !stream.Underflow; i++) stream.Read(pcm);
+            Check(stream.Underflow && !stream.Drained && !growing.Complete,
+                "temporary network starvation is underflow, never natural EOF");
+            stream.Enable(false); stream.Seek(192000 / 4);
+            writer.Write(bytes, prefix, bytes.Length - prefix); writer.Flush();
+            growing.Publish(bytes.Length); growing.Finish();
+            Wait(() => stream.Ready || stream.Error != null);
+            Check(stream.Ready, "underflow recovers after compressed bytes resume");
+            stream.Enable(true); stale.Read(pcm);
+            Check(pcm.All(x => x == 0), "old clip reader stays silent after underflow recovery");
+            stream.Read(pcm);
+            Check(pcm[0] == Sample(192000 / 4, 0, 16), "recovered stream resumes exact PCM frame");
+        }
+        finally
+        {
+            stream.Dispose(); growing.Close(); Wait(() => stream.Released);
+            writer.Dispose(); lease.Dispose(); Wait(() => !File.Exists(path));
+        }
     }
     private static void ProgressiveTruncatedHttp(string fixture)
     {
