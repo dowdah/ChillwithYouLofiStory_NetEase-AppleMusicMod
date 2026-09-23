@@ -69,6 +69,7 @@ internal class MainThreadDispatcher : MonoBehaviour
 		}
 
 		BridgePanel.TickAlways();
+        NeteaseRuntime.Fm.Tick(!AudioOutputRecovery.OutputUnavailable);
 		while (true)
 		{
 			Action action;

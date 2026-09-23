@@ -1338,7 +1338,9 @@ internal static class BridgePanel
 			_nowTitleText.text = selected.StatusPrefix + selected.Title;
 			_nowArtistText.text = selected.Artist ?? UiKit.Glyph("—", "-");
 		}
-		bool flag = hasTrack && selected.IsPlaying;
+		if (_prevButton != null) _prevButton.interactable = MusicTransport.CanPrevious;
+        if (_nextButton != null) _nextButton.interactable = MusicTransport.CanNext;
+        bool flag = hasTrack && selected.IsPlaying;
 		if (_playIcon != null)
 		{
 			Sprite sprite = (flag ? GameNowPlayingBar.GamePauseSprite : GameNowPlayingBar.GamePlaySprite);

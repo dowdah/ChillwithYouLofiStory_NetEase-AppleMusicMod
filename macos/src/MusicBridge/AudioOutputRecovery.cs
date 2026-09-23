@@ -22,8 +22,18 @@ internal sealed class AudioOutputRecovery : MonoBehaviour
     private bool _quitting;
     private bool _resetting;
     private bool _warnedExhausted;
+    private bool _deviceTransition;
+    private float _transitionUntil;
+    private Action _restoreAfterTransition;
 
-    public static bool OutputUnavailable => _instance != null && _instance._policy.Failed;
+    public static bool OutputUnavailable => _instance != null &&
+        (_instance._policy.Failed || _instance._deviceTransition ||
+         Volatile.Read(ref _instance._deviceSignals) != 0 || Volatile.Read(ref _instance._failureSignals) != 0);
+
+    internal static void ReportProgressDiscontinuity()
+    {
+        if (_instance != null) Interlocked.Exchange(ref _instance._deviceSignals, 1);
+    }
 
     public static void Initialize()
     {
@@ -44,6 +54,7 @@ internal sealed class AudioOutputRecovery : MonoBehaviour
     private void OnLog(string message, string stack, LogType type)
     {
         if (AudioRecoveryPolicy.IsOutputFailure(message)) Interlocked.Increment(ref _failureSignals);
+        else if (AudioRecoveryPolicy.IsDeviceTransition(message)) Interlocked.Exchange(ref _deviceSignals, 1);
     }
 
     private void OnConfigurationChanged(bool deviceChanged)
@@ -70,10 +81,25 @@ internal sealed class AudioOutputRecovery : MonoBehaviour
         }
         if (Interlocked.Exchange(ref _deviceSignals, 0) != 0)
         {
-            BridgeLog.Info("系统音频设备已变化。");
+            if (!_deviceTransition)
+            {
+                var player = AudioPlayer.Instance;
+                _restoreAfterTransition = player != null ? player.CaptureOutputRecovery(preferCachedPosition: true) : null;
+            }
+            _deviceTransition = true;
+            _transitionUntil = now + 2f;
+            BridgeLog.Info("音频设备切换保护：暂缓曲目结束判断，保留当前歌曲与进度。");
             if (_policy.Failed) _policy.RequestRetry(now);
         }
         if (_policy.TryBegin(now)) Recover();
+        if (_deviceTransition && now >= _transitionUntil && !_policy.Failed)
+        {
+            var restore = _restoreAfterTransition;
+            _restoreAfterTransition = null;
+            _deviceTransition = false;
+            restore?.Invoke();
+            BridgeLog.Info("音频设备切换稳定，恢复同一曲目与原播放/暂停意图；未推进队列。");
+        }
         if (_policy.Failed && !_policy.Pending && _policy.Attempts >= 3 && !_warnedExhausted)
         {
             _warnedExhausted = true;
@@ -90,7 +116,8 @@ internal sealed class AudioOutputRecovery : MonoBehaviour
         try
         {
             var player = AudioPlayer.Instance;
-            restoreMusic = player != null ? player.CaptureOutputRecovery() : null;
+            restoreMusic = _restoreAfterTransition ?? (player != null ? player.CaptureOutputRecovery(preferCachedPosition: true) : null);
+            _restoreAfterTransition = null;
             // No per-frame scene scan. Remember only sources playing at the reset.
             foreach (var source in UnityEngine.Object.FindObjectsOfType<AudioSource>())
             {

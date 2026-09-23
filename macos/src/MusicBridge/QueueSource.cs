@@ -6,5 +6,6 @@ internal enum QueueSource
 	Playlist,
 	LikedSongs,
 	SearchResults,
-	Recommendations
+	Recommendations,
+	PersonalFm
 }

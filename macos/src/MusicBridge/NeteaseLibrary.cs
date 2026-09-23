@@ -173,6 +173,7 @@ internal static class NeteaseLibrary
 		SearchSongsError = (SearchPlaylistsError = (SearchAlbumsError = null));
 		RecommendState = LoadState.Idle;
 		RecommendError = null;
+		_likedRequested = false; _likedSnapshot.Clear();
 		UserId = 0L;
 		Nickname = "";
 		CoverCache.Clear();
@@ -268,52 +269,36 @@ internal static class NeteaseLibrary
 		}
 	}
 
-	public static void LoadLikedSongs(bool force)
-	{
-		if (UserId == 0L || (!force && LikedPlaylist.TracksComplete) || (!force && LikedPlaylist.TracksLoading))
-		{
-			return;
-		}
-		int gen;
-		lock (Gate)
-		{
-			gen = ++_likedGen;
-		}
-		int token = BeginLoad(LikedPlaylist);
-		LikedPlaylist.TracksError = null;
-		Notify();
-		Func<bool> stillCurrent = delegate
-		{
-			lock (Gate)
-			{
-				return gen == _likedGen;
-			}
-		};
-		Background("LoadLiked", delegate
-		{
-			bool netErr;
-			List<long> likedSongIds = NeteaseApi.GetLikedSongIds(UserId, out netErr);
-			if (!stillCurrent())
-			{
-				AbandonLoad(LikedPlaylist, token);
-			}
-			else if (likedSongIds == null)
-			{
-				CommitIf(stillCurrent, delegate
-				{
-					LikedPlaylist.TracksLoading = false;
-					LikedPlaylist.TracksError = (netErr ? "网络错误，请重试" : "加载失败");
-				});
-			}
-			else
-			{
-				FetchTracksInBatches(LikedPlaylist, likedSongIds, stillCurrent, token);
-			}
-		}, delegate
-		{
-			FailLoad(LikedPlaylist, token, stillCurrent);
-		});
-	}
+    private static bool _likedRequested;
+    private static List<long> _likedSnapshot = new List<long>();
+    public static void LoadLikedSongs(bool force)
+    {
+        _likedRequested = true;
+        if (force || !NeteaseRuntime.Favorites.Known) { NeteaseRuntime.Favorites.Refresh(); return; }
+        if (LikedPlaylist.TracksComplete || LikedPlaylist.TracksLoading) return;
+        SyncLikedSnapshot();
+    }
+    internal static void SyncLikedSnapshot()
+    {
+        var favorites = NeteaseRuntime.Favorites;
+        var ids = favorites.Ids;
+        bool same = ids.Count == _likedSnapshot.Count;
+        for (int i = 0; same && i < ids.Count; i++) same = ids[i] == _likedSnapshot[i];
+        if (same && (LikedPlaylist.TracksComplete || LikedPlaylist.TracksLoading)) return;
+        _likedSnapshot = ids;
+        int gen; lock (Gate) gen = ++_likedGen;
+        var keep = new HashSet<long>(ids);
+        LikedPlaylist.Tracks = LikedPlaylist.Tracks.FindAll(t => keep.Contains(t.Id));
+        LikedPlaylist.TrackCount = ids.Count;
+        LikedPlaylist.TracksComplete = false;
+        LikedPlaylist.TracksLoading = false;
+        Notify();
+        if (!_likedRequested) return;
+        int token = BeginLoad(LikedPlaylist);
+        var context = NeteaseRuntime.Context;
+        Func<bool> current = () => context != null && context.Active && gen == _likedGen;
+        Background("LikedDetails", () => FetchTracksInBatches(LikedPlaylist, ids, current, token), () => FailLoad(LikedPlaylist, token, current));
+    }
 
 	private static void FailLoad(PlaylistInfo playlist, int token, Func<bool> stillCurrent)
 	{

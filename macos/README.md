@@ -5,7 +5,9 @@
 保留原插件的网易云、Apple Music 和本地音乐三个音源，把 Windows 专属的部分适配到 macOS。\
 配置好后，直接在 **Steam 点击“开始游戏”**，就会自动加载 Mod，不需要另外打开启动器。
 
-当前版本：**1.2.0.4，实验适配版**。已在 M1 Pro 上测试，网易云和 Apple Music 可用；优化后，测试者反馈流畅度明显改善。
+当前源码版本：**1.3.0.0，基于 main 的 1.2.0.4 编号的网易云增强合并候选版**。FLAC边下载边播、下一首预下载及两项默认开启已在 ARM 游戏中验证出声、seek、切歌和一小时私人 FM 连续播放；一小时验收使用的 DLL 与当前源码仅差一处未触发的故障分类修正。修正后的 DLL 另通过简短游戏内 MP3 seek、预下载 FLAC 切歌与退出清理复测；它没有单独完成冷 FLAC 流式首播或一小时长稳。具体证据及未完成项目见 [第二批记录](NETEASE-PHASE2.md)。此前1.2.0.4已在 M1 Pro 上测试，网易云和 Apple Music 可用；其验证结果不自动适用于本批新增功能。
+
+第一批开发候选（当时编号1.3.0.2）已加入私人FM、喜欢双向同步、128/320 kbps和分音质缓存；两批现统一按main的1.2.0.4重编号为1.3.0.0合并候选。第一批云端与游戏内验收状态独立记录在 [第一批实现与验收记录](NETEASE-PHASE1.md)。
 
 ## Mac 适配新增
 
@@ -143,14 +145,14 @@ DOTNET_BIN=/absolute/path/to/dotnet ./macos/build.sh
 本地测试：
 
 ```sh
-dotnet run --project macos/tests
+(cd macos && dotnet run --project tests)
 python3 -m unittest discover -s macos/tools -p 'test_*.py'
 ```
 
 可选系统接口测试（读取音乐库、匿名联网，钥匙串使用独立临时测试条目）：
 
 ```sh
-dotnet run --project macos/tests -- --music --network --keychain
+(cd macos && dotnet run --project tests -- --music --network --keychain)
 ```
 
 撤销最近一次通过升级工具安装的版本：退出游戏后，在项目根目录执行 `python3 macos/tools/runtime_update.py rollback`。它需要已有的本地备份，不会删除音乐缓存；如果要回到不支持 Steam 接入的旧版本，请先恢复 Steam 启动选项。
@@ -164,3 +166,21 @@ dotnet run --project macos/tests -- --music --network --keychain
 原插件作者：**MoonFlower**。原项目：[AndyGru96/ChillwithYouLofiStory_NetEase-AppleMusicMod](https://github.com/AndyGru96/ChillwithYouLofiStory_NetEase-AppleMusicMod)。
 
 此适配基于上游 1.2.0 版本（提交 `db8316e0dc33132c982538aad100489d4a86fb81`）。由于上游发布的是 DLL，`src` 中的代码是通过 ILSpy 恢复后修改的版本，并非原作者提供的源码工程。插件自身保留 MIT 许可，第三方组件遵循各自许可。
+
+## FLAC / Hi-Res 候选版
+
+网易云音质可选128 kbps、320 kbps、无损和Hi-Res。更改从下次加载生效，
+服务端降级或试听会明确显示。FLAC的采样率、位深和声道来自实际文件；
+Hi-Res文件不代表游戏混音或系统输出为bit-perfect。
+
+无需安装额外播放器：随包提供固定版本的双架构FLAC解码库。
+缓存/预下载命中的FLAC沿用完整文件分块播放；未命中时可通过
+`Netease.StreamFlacDuringDownload` 在下载中预填PCM并提前播放。当前源码默认开启；
+完整下载、摘要和解码校验通过前不登记缓存。seek期间显示缓冲，并保留暂停意图。
+下一首预下载已完成ARM游戏内顺序切歌及自然续播验收；
+`Netease.NextAudioPreload` 对未显式配置的安装默认开启，已有显式 `false` 保留。
+两个开关都可在配置中显式设为 `false`，旧配置中已有的显式值不会被覆盖。
+
+默认FLAC请求总超时180秒、停滞15秒、下载上限1 GiB；
+缓存总容量512 MiB、单文件默认256 MiB，显式旧配置不覆盖。
+ARM实机结果、Intel未验证范围及配置回滚注意事项见第二批记录。

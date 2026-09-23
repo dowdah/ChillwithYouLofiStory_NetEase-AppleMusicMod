@@ -36,7 +36,8 @@ internal static class GameNowPlayingBar
 	private static object _musicUi;
     private static FieldInfo _draggingProgressField;
 
-	private static TextMeshProUGUI _titleText;
+	private static Image _backImage, _nextImage;
+    private static TextMeshProUGUI _titleText;
 
 	private static TextMeshProUGUI _artistText;
 
@@ -147,6 +148,7 @@ internal static class GameNowPlayingBar
 			_loopOff = obj.Field("_notLoopButtonSprite").GetValue<Sprite>();
 			Image value = obj.Field("_backButtonImage").GetValue<Image>();
 			Image value2 = obj.Field("_nextButtonImage").GetValue<Image>();
+            _backImage = value; _nextImage = value2;
 			if (value != null)
 			{
 				GamePrevSprite = value.sprite;
@@ -290,6 +292,31 @@ internal static class GameNowPlayingBar
 			BridgeLog.Warn("[底栏] 诊断失败：" + ex.Message);
 		}
 	}
+
+    private static readonly Dictionary<Button, bool> FmDisabledControls = new Dictionary<Button, bool>();
+    private static void SetControlEnabled(Image image, bool enabled)
+    {
+        if (image == null) return;
+        var button = image.GetComponent<Button>() ?? image.GetComponentInParent<Button>();
+        if (button == null) return;
+        if (!enabled)
+        {
+            if (!FmDisabledControls.ContainsKey(button)) FmDisabledControls[button] = button.interactable;
+            button.interactable = false;
+        }
+        else if (FmDisabledControls.TryGetValue(button, out bool original))
+        {
+            button.interactable = original; FmDisabledControls.Remove(button);
+        }
+    }
+    private static void SyncFmCapabilities()
+    {
+        SetControlEnabled(_backImage, MusicTransport.CanPrevious);
+        SetControlEnabled(_nextImage, MusicTransport.CanNext);
+        SetControlEnabled(_loopImage, MusicTransport.CanChangeMode);
+        SetControlEnabled(_shuffleImage, MusicTransport.CanChangeMode);
+        if (_allShuffleButtons != null) foreach (var item in _allShuffleButtons) SetControlEnabled(item.Image, MusicTransport.CanChangeMode);
+    }
 
 	internal static void SyncShuffleIcon(bool on)
 	{
@@ -508,6 +535,7 @@ internal static class GameNowPlayingBar
 
 	public static void Tick()
 	{
+        SyncFmCapabilities();
 		if (_titleText == null || _artistText == null)
 		{
 			return;
@@ -614,6 +642,7 @@ internal static class GameNowPlayingBar
 		}
 		UpdateAllPlayButtons(_playSprite, _pauseSprite, current.IsPlaying, bridgeActive: true);
 		UpdateAllShuffleButtons(current.Shuffle);
+        SyncFmCapabilities();
 		if (_loopImage != null && _loopOn != null && _loopOff != null)
 		{
 			Sprite sprite = (current.RepeatOne ? _loopOn : _loopOff);

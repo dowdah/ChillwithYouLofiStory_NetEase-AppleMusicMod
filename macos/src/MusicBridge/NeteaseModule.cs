@@ -14,7 +14,7 @@ internal sealed class NeteaseModule : IMusicModule
 		{
 			if (P != null)
 			{
-				return P.IsActive;
+				return P.IsActive || NeteaseRuntime.Fm.Active;
 			}
 			return false;
 		}
@@ -38,7 +38,7 @@ internal sealed class NeteaseModule : IMusicModule
 		{
 			if (!(P != null) || P.CurrentTrack == null)
 			{
-				return null;
+				return NeteaseRuntime.Fm.Active ? "私人FM" : null;
 			}
 			return P.CurrentTrack.Name;
 		}
@@ -50,7 +50,7 @@ internal sealed class NeteaseModule : IMusicModule
 		{
 			if (P == null || P.CurrentTrack == null)
 			{
-				return null;
+				return NeteaseRuntime.Fm.Active ? (NeteaseRuntime.Fm.Error ?? (NeteaseRuntime.Fm.Suspended ? "FM已暂停" : "正在获取下一首…")) : null;
 			}
 			TrackInfo currentTrack = P.CurrentTrack;
 			string text = currentTrack.Artists;
@@ -58,7 +58,7 @@ internal sealed class NeteaseModule : IMusicModule
 			{
 				text = text + " · " + currentTrack.Album;
 			}
-			return text;
+			return text + (P.PlaybackSource == null ? "" : " · " + P.PlaybackSource.QualityLabel);
 		}
 	}
 
@@ -66,7 +66,7 @@ internal sealed class NeteaseModule : IMusicModule
 
 	public double Duration => (P != null) ? P.DurationSeconds : 0f;
 
-	public bool CanSeek => HasTrack;
+	public bool CanSeek => P != null && P.CurrentTrack != null && (P.State == PlaybackState.Playing || P.State == PlaybackState.Paused);
 
 	public bool SupportsLyrics => true;
 
@@ -76,7 +76,7 @@ internal sealed class NeteaseModule : IMusicModule
 		{
 			if (P != null)
 			{
-				return P.Shuffle;
+				return !P.IsFm && P.Shuffle;
 			}
 			return false;
 		}
@@ -84,7 +84,7 @@ internal sealed class NeteaseModule : IMusicModule
 		{
 			if (P != null)
 			{
-				P.Shuffle = value;
+				if (!P.IsFm) P.Shuffle = value;
 			}
 		}
 	}
@@ -95,7 +95,7 @@ internal sealed class NeteaseModule : IMusicModule
 		{
 			if (P != null)
 			{
-				return P.RepeatOne;
+				return !P.IsFm && P.RepeatOne;
 			}
 			return false;
 		}
@@ -103,7 +103,7 @@ internal sealed class NeteaseModule : IMusicModule
 		{
 			if (P != null)
 			{
-				P.RepeatOne = value;
+				if (!P.IsFm) P.RepeatOne = value;
 			}
 		}
 	}

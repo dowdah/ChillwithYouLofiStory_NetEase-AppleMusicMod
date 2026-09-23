@@ -7,7 +7,7 @@ using Newtonsoft.Json.Linq;
 
 namespace MusicBridge;
 
-internal static class NeteaseApi
+internal static partial class NeteaseApi
 {
 	private const string Origin = "https://music.163.com";
 
@@ -315,26 +315,8 @@ internal static class NeteaseApi
 			BridgeLog.Warn("喜欢列表 code=" + jObject.Value<int?>("code"));
 			return null;
 		}
-		List<long> list = new List<long>();
-		JArray jArray = jObject["ids"] as JArray;
-		int num = 0;
-		if (jArray != null)
-		{
-			foreach (JToken item in jArray)
-			{
-				long? num2 = item?.Value<long?>();
-				if (num2.HasValue && num2.Value != 0L)
-				{
-					list.Add(num2.Value);
-				}
-				else
-				{
-					num++;
-				}
-			}
-		}
-		BridgeLog.Info("我喜欢的音乐：" + list.Count + " 首" + ((num > 0) ? ("（跳过 " + num + " 个无法解析的元素）") : "") + "。");
-		return list;
+        var parsed = ParseFavorites(jObject);
+        return parsed.Ok ? parsed.Value : null;
 	}
 
 	public static List<long> GetPlaylistTrackIds(long playlistId, out bool networkError)
@@ -957,22 +939,19 @@ internal static class NeteaseApi
 		return list;
 	}
 
-	private static JObject Post(string path, string plainJson, out bool networkError, string csrf = null, NeteaseRequestCancellation cancellation = null)
+	private static JObject Post(string path, string plainJson, out bool networkError, string csrf = null, NeteaseRequestCancellation cancellation = null, NeteaseAccountContext context = null, Action<NeteaseFailure> onFailure = null)
 	{
 		networkError = false;
 		HttpWebRequest httpWebRequest = null;
 		try
 		{
-			if (cancellation != null && cancellation.IsCancelled)
+			if ((context != null && !context.Active) || (cancellation != null && cancellation.IsCancelled))
 			{
+				onFailure?.Invoke(NeteaseFailure.Cancelled);
 				return null;
 			}
 			NeteaseCrypto.Encrypt(plainJson, out var paramsValue, out var encSecKey);
-			string text = "https://music.163.com" + path;
-			if (!string.IsNullOrEmpty(csrf))
-			{
-				text = text + "?csrf_token=" + Uri.EscapeDataString(csrf);
-			}
+			string text = BuildRequestUrl(path, csrf);
 			httpWebRequest = (HttpWebRequest)WebRequest.Create(text);
 			cancellation?.Attach(httpWebRequest);
 			httpWebRequest.Method = "POST";
@@ -987,11 +966,12 @@ internal static class NeteaseApi
 			httpWebRequest.KeepAlive = true;
 			lock (CookieLock)
 			{
-				httpWebRequest.CookieContainer = _cookies;
+				httpWebRequest.CookieContainer = context != null ? context.Cookies : _cookies;
 			}
 			string s = "params=" + Uri.EscapeDataString(paramsValue) + "&encSecKey=" + Uri.EscapeDataString(encSecKey);
 			byte[] bytes = Encoding.UTF8.GetBytes(s);
 			httpWebRequest.ContentLength = bytes.Length;
+			if (context != null && !context.Active) { onFailure?.Invoke(NeteaseFailure.Cancelled); return null; }
 			using (Stream stream = httpWebRequest.GetRequestStream())
 			{
 				stream.Write(bytes, 0, bytes.Length);
@@ -1014,12 +994,17 @@ internal static class NeteaseApi
 				{
 				}
 			}
-			networkError = ex.Status != WebExceptionStatus.ProtocolError;
+			onFailure?.Invoke(cancellation != null && cancellation.IsCancelled ? NeteaseFailure.Cancelled :
+                ex.Response is HttpWebResponse response && (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden) ? NeteaseFailure.Unauthorized :
+                ex.Response is HttpWebResponse server && (int)server.StatusCode >= 500 ? NeteaseFailure.Network :
+                ex.Status == WebExceptionStatus.ProtocolError ? NeteaseFailure.Rejected : NeteaseFailure.Network);
+            networkError = ex.Status != WebExceptionStatus.ProtocolError;
 			BridgeLog.Warn("请求 " + path + " 网络异常：" + ex.Status);
 			return null;
 		}
 		catch (Exception ex2)
 		{
+			onFailure?.Invoke(NeteaseFailure.Protocol);
 			BridgeLog.Warn("请求 " + path + " 失败：" + ex2.GetType().Name);
 			return null;
 		}

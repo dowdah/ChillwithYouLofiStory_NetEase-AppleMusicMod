@@ -9,7 +9,25 @@ internal static class Program
     static void Assert(bool condition, string name) { if (!condition) throw new Exception("FAIL: " + name); Console.WriteLine("PASS: " + name); }
     static void Main(string[] args)
     {
+        if (args.Contains("--long-flac")) { FlacTests.LongFile(); return; }
+        if (args.Contains("--progressive-core")) {
+            FlacTests.ProgressiveCore(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+                "../../../../test-artifacts/netease-phase2/fixtures/192000-16-2.flac"))); return; }
+        if (args.Contains("--progressive-http")) {
+            FlacTests.ProgressiveHttp(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+                "../../../../test-artifacts/netease-phase2/fixtures/192000-16-2.flac"))); return; }
+        if (args.Contains("--stream-benchmark")) {
+            FlacTests.BenchmarkStreaming(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+                "../../../../test-artifacts/netease-phase2/bench-60sec.flac")),
+                args.Length > 1 && int.TryParse(args[1], out int pairs) ? pairs : 20); return; }
+        if (args.Length == 2 && args[0] == "--download-song") { FlacTests.ProbeSong(long.Parse(args[1])); return; }
+        if (args.Length > 0 && args[0] == "--source-latency") { FlacTests.SourceLatency(args.Skip(1).Select(long.Parse).ToArray()); return; }
+        if (args.Contains("--flac-download-probe")) { FlacTests.ProbeAccount(true); return; }
+        if (args.Contains("--quality-probe")) { FlacTests.ProbeAccount(); return; }
         AudioRecoveryTests.Run();
+        NeteaseEnhancementTests.Run();
+        FlacTests.Run();
+        PrefetchTests.Run();
         var tree = new List<AmPlaylist> { new AmPlaylist { Name = "测试 \"歌单\"\n🎵", PersistentId = "ABC", DeclaredCount = 1, TrackState = AmTrackState.Loaded, TracksComplete = true, ChildrenLoaded = true } };
         tree[0].Tracks.Add(new AmTrack { Name = "Track", PersistentId = "DEF", Artists = "艺术家", RowIndex = 0, DurationText = "3:05" });
         AmValidation validation;

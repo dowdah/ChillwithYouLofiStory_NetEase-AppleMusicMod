@@ -26,9 +26,17 @@ internal sealed class NeteaseOptions
 
 	public long AudioCacheCapacityBytes = 536870912L;
 
-	public long AudioCacheMaximumFileBytes = 67108864L;
+	public long AudioCacheMaximumFileBytes = 268435456L;
 
-	public long SessionMaximumFileBytes = 65536L;
+	public TimeSpan FlacRequestTimeout = TimeSpan.FromSeconds(180);
+    public long FlacMaximumDownloadBytes = 1073741824L;
 
-	public bool RepeatQueue = true;
+    public long SessionMaximumFileBytes = 65536L;
+
+    public bool RepeatQueue = true;
+    public NeteaseQuality PreferredQuality = NeteaseQuality.Standard;
+    public bool NextAudioPreload = true;
+    public bool StreamFlacDuringDownload = true;
+    public bool AutoRefreshFavorites = true;
+    public TimeSpan FavoritesRefreshInterval = TimeSpan.FromMinutes(5);
 }

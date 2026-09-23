@@ -83,6 +83,8 @@ internal static class NeteasePanelUi
 			if (_tracks != null && index >= 0 && index < _tracks.Count)
 			{
 				PanelRows.BindTrackRow(row, _tracks[index], index, isCurrent);
+                if (row.Favorite == null) row.Favorite = NeteaseFavoriteButton.Create(row.Root.transform);
+                row.Favorite.Bind(_tracks[index].Id);
 			}
 		}
 
@@ -201,6 +203,7 @@ internal static class NeteasePanelUi
 		BuildSubEntryRow(_root.transform);
 		BuildSearchRow(_root.transform);
 		BuildStatusBar(_root.transform);
+        BuildEnhancements(_root.transform);
 		_listRoot = UiKit.CreateColumn(listParent, "ListRoot", 3f);
 		PanelRows.MarkOwned(_listRoot, MusicProvider.Netease);
 		ApplySection(_section, log: false);
@@ -288,8 +291,8 @@ internal static class NeteasePanelUi
 			{
 				return "播放失败 · " + instance.CurrentTrack.Name + (string.IsNullOrEmpty(instance.LastError) ? "" : (" · " + instance.LastError));
 			}
-			string text = ModeSuffix(instance.Shuffle, instance.RepeatOne);
-			string text2 = (instance.RepeatOne ? "" : (" · " + (instance.RepeatQueue ? "队列播完后从头继续" : "队列播完后停止")));
+			string text = instance.IsFm ? " · 私人FM" : ModeSuffix(instance.Shuffle, instance.RepeatOne);
+			string text2 = (instance.IsFm || instance.RepeatOne ? "" : (" · " + (instance.RepeatQueue ? "队列播完后从头继续" : "队列播完后停止")));
 			if (instance.State == PlaybackState.Playing)
 			{
 				return "正在播放 · " + instance.CurrentTrack.Name + text + text2;
@@ -382,6 +385,7 @@ internal static class NeteasePanelUi
 		AddSubEntry("收藏歌单", NeteaseSection.SubscribedPlaylists, 82f);
 		AddSubEntry("搜索", NeteaseSection.Search, 54f);
 		AddSubEntry("推荐", NeteaseSection.Recommend, 54f);
+        AddSubEntry("私人FM", NeteaseSection.PersonalFm, 76f);
 	}
 
 	private static void AddSubEntry(string label, NeteaseSection section, float width)
@@ -471,7 +475,10 @@ internal static class NeteasePanelUi
 	}
 
 	public static void Tick()
-	{
+    {
+        NeteaseRuntime.Favorites.Tick(_root != null && _root.activeInHierarchy && Application.isFocused,
+            MusicBridgeOptions.Current.Netease.AutoRefreshFavorites, MusicBridgeOptions.Current.Netease.FavoritesRefreshInterval);
+        RefreshEnhancements();
 		if (_rebuildQueued)
 		{
 			_rebuildQueued = false;
@@ -517,7 +524,10 @@ internal static class NeteasePanelUi
 			case NeteaseSection.Search:
 				BuildSearch();
 				break;
-			case NeteaseSection.Recommend:
+			case NeteaseSection.PersonalFm:
+                BuildFm();
+                break;
+            case NeteaseSection.Recommend:
 				BuildRecommend();
 				break;
 			}
@@ -528,6 +538,90 @@ internal static class NeteasePanelUi
 			BridgeLog.Error("重建网易云内容区失败：" + ex.Message);
 		}
 	}
+
+    private static Button _quality128, _quality320, _qualityLossless, _qualityHiRes, _refreshFavorites;
+    private static MarqueeText _qualityStatus, _favoritesStatus;
+    private static NeteaseFavoriteButton _currentFavorite;
+    private static string _settingsError;
+    private static long _confirmTrashId;
+    private static string _fmUiKey;
+    private static void BuildEnhancements(Transform parent)
+    {
+        var options = UiKit.CreateRow(parent, "NeteaseQuality", 30f, 6f);
+        _quality128 = UiKit.CreatePillButton(options.transform, "128 kbps", false, UiKit.LineColor, 26f, 84f);
+        _quality320 = UiKit.CreatePillButton(options.transform, "320 kbps", false, UiKit.LineColor, 26f, 84f);
+        _quality128.onClick.AddListener(() => ChangeQuality(NeteaseQuality.Standard));
+        _quality320.onClick.AddListener(() => ChangeQuality(NeteaseQuality.Exhigh));
+        _qualityLossless = UiKit.CreatePillButton(options.transform, "无损", false, UiKit.LineColor, 26f, 84f);
+        _qualityHiRes = UiKit.CreatePillButton(options.transform, "Hi-Res", false, UiKit.LineColor, 26f, 84f);
+        _qualityLossless.onClick.AddListener(() => ChangeQuality(NeteaseQuality.Lossless));
+        _qualityHiRes.onClick.AddListener(() => ChangeQuality(NeteaseQuality.HiRes));
+        var favorites = UiKit.CreateRow(parent, "NeteaseFavoritesActions", 30f, 6f);
+        _refreshFavorites = UiKit.CreatePillButton(favorites.transform, "刷新云端喜欢状态", false, UiKit.LineColor, 26f, 160f);
+        _refreshFavorites.onClick.AddListener(() => NeteaseRuntime.Favorites.Refresh());
+        _currentFavorite = NeteaseFavoriteButton.Create(favorites.transform);
+        var quality = UiKit.CreateStatusRowWithMarquee(parent, "NeteaseActualQuality", 22f, UiKit.GameArtistFontSize, out var qualityHead, out _qualityStatus);
+        qualityHead.text = "音质 · ";
+        var sync = UiKit.CreateStatusRowWithMarquee(parent, "NeteaseFavoriteStatus", 22f, UiKit.GameArtistFontSize, out var favoritesHead, out _favoritesStatus);
+        favoritesHead.text = "喜欢 · ";
+        RefreshEnhancements();
+    }
+    private static void ChangeQuality(NeteaseQuality quality)
+    {
+        MusicBridgeOptions.SaveQuality(quality, out _settingsError); RefreshEnhancements();
+    }
+    internal static void RefreshEnhancements()
+    {
+        var player = AudioPlayer.Instance; var favorites = NeteaseRuntime.Favorites; var fm = NeteaseRuntime.Fm;
+        if (_quality128 != null) _quality128.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Standard;
+        if (_quality320 != null) _quality320.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Exhigh;
+        if (_qualityLossless != null) _qualityLossless.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Lossless;
+        if (_qualityHiRes != null) _qualityHiRes.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.HiRes;
+        if (_refreshFavorites != null) _refreshFavorites.interactable = NeteaseRuntime.Context != null && !favorites.Refreshing;
+        if (_currentFavorite != null) _currentFavorite.Bind(player != null && player.CurrentTrack != null ? player.CurrentTrack.Id : 0);
+        if (_qualityStatus != null) _qualityStatus.SetContent(_settingsError ?? ((player != null ? player.PlaybackSource?.QualityLabel : null) ?? "实际音质：未加载") + (player != null && player.IsBuffering ? " · 正在缓冲…" : "") + " · 首选 " + NeteaseQualityPolicy.Label(MusicBridgeOptions.Current.Netease.PreferredQuality) + "（下次加载生效）");
+        if (_favoritesStatus != null) _favoritesStatus.SetContent(favorites.Refreshing ? "正在同步云端喜欢状态…" : favorites.Error ?? (favorites.LastSuccess.HasValue ? "喜欢状态已同步 · " + favorites.LastSuccess.Value.ToLocalTime().ToString("HH:mm:ss") : "喜欢状态未知"));
+        string key = fm.Active + ":" + fm.Suspended + ":" + fm.Fetching + ":" + fm.Waiting + ":" + fm.CanPrevious + ":" + fm.Current?.Id + ":" + fm.Error + ":" + fm.TrashPending + ":" + fm.TrashError;
+        if (_fmUiKey != key)
+        {
+            _fmUiKey = key;
+            if (fm.Current == null || fm.Current.Id != _confirmTrashId) _confirmTrashId = 0;
+            if (_section == NeteaseSection.PersonalFm) RequestRebuild();
+        }
+    }
+    private static void BuildFm()
+    {
+        var fm = NeteaseRuntime.Fm;
+        if (!fm.Active)
+        {
+            CreateStatusRow("私人FM会按需接续推荐；浏览其他页面不会停止播放。", 0f);
+            PanelRows.ActionRow(_listRoot.transform, "FmStart", NeteaseRuntime.Context == null ? "请先登录网易云" : "开始私人FM", 0f, () => NeteaseRuntime.StartFm());
+            return;
+        }
+        var row = UiKit.CreateRow(_listRoot.transform, "FmControls", 32f, 8f);
+        var previous = UiKit.CreatePillButton(row.transform, "上一首", false, UiKit.LineColor, 26f, 70f);
+        previous.interactable = fm.CanPrevious && !fm.Suspended;
+        previous.onClick.AddListener(() => fm.Previous());
+        var next = UiKit.CreatePillButton(row.transform, "下一首", false, UiKit.LineColor, 26f, 70f);
+        next.interactable = !fm.Suspended && !fm.Waiting;
+        next.onClick.AddListener(() => fm.Next());
+        var resume = UiKit.CreatePillButton(row.transform, fm.Suspended ? "恢复FM" : "暂停FM", false, UiKit.LineColor, 26f, 80f);
+        resume.onClick.AddListener(() => AudioPlayer.Instance?.TogglePlayPause());
+        var trash = UiKit.CreatePillButton(row.transform, fm.TrashPending ? "正在提交…" : "不再推荐", false, UiKit.NeteaseAccent, 26f, 100f);
+        trash.interactable = fm.Current != null && !fm.TrashPending && !fm.Suspended;
+        trash.onClick.AddListener(() => { _confirmTrashId = fm.Current?.Id ?? 0; RequestRebuild(); });
+        CreateStatusRow(fm.Error ?? (fm.Suspended ? "FM已暂停，等待主动恢复" : fm.Waiting ? "正在获取下一首…" : "私人FM · " + fm.Current?.Name), 0f, fm.HasError ? (Action)(() => fm.Retry()) : null);
+        if (fm.TrashError != null) CreateStatusRow(fm.TrashError, 0f);
+        if (_confirmTrashId != 0 && fm.Current != null && fm.Current.Id == _confirmTrashId)
+        {
+            CreateStatusRow("将向网易云提交《" + fm.Current.Name + "》的负反馈；成功后切到下一首。", 0f);
+            var confirmation = UiKit.CreateRow(_listRoot.transform, "FmTrashConfirm", 30f, 8f);
+            UiKit.CreatePillButton(confirmation.transform, "取消", false, UiKit.LineColor, 26f, 70f).onClick.AddListener(() => { _confirmTrashId = 0; RequestRebuild(); });
+            long id = _confirmTrashId;
+            UiKit.CreatePillButton(confirmation.transform, "确认不再推荐", false, UiKit.NeteaseAccent, 26f, 140f).onClick.AddListener(() => { _confirmTrashId = 0; fm.TrashCurrent(id); RequestRebuild(); });
+        }
+        CreateStatusRow("FM不使用随机或循环；“下一首”不会提交负反馈。", 0f);
+    }
 
 	private static void BuildMyPlaylists()
 	{
@@ -977,6 +1071,7 @@ internal static class NeteasePanelUi
 				}
 			}
 		}, out var parts);
+        NeteaseFavoriteButton.Create(parts.Row.transform, t.Id);
 		TrackRows.Add(new TrackRowVisual
 		{
 			TrackId = t.Id,

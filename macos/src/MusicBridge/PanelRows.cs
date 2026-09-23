@@ -10,6 +10,7 @@ internal static class PanelRows
 	internal sealed class TrackRow
 	{
 		public GameObject Root;
+        public NeteaseFavoriteButton Favorite;
 
 		public RectTransform Rect;
 
