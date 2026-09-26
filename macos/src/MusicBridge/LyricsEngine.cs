@@ -29,6 +29,7 @@ internal static class LyricsEngine
 	private static volatile List<LyricLine> _lines = new List<LyricLine>();
 
 	private static volatile int _currentIndex = -1;
+	private static int _contentRevision;
 
 	private static int DerivativeRejects;
 
@@ -52,6 +53,7 @@ internal static class LyricsEngine
 
 	private static void Notify()
 	{
+		Interlocked.Increment(ref _contentRevision);
 		Plugin.RunOnMainThread(delegate
 		{
 			try
@@ -863,6 +865,35 @@ internal static class LyricsEngine
 			return lyricLine.Text;
 		}
 		return lyricLine.Translation;
+	}
+
+	public static LyricSnapshot Snapshot(double position)
+	{
+		string context = _contextKey;
+		List<LyricLine> lines = _lines;
+		LyricsState state = _state;
+		if (context != _contextKey)
+			return new LyricSnapshot(_contextKey, Volatile.Read(ref _contentRevision), TrackId,
+				LyricsState.Loading, "歌词加载中…", -1, 0, null, null);
+		int index = -1;
+		if (state == LyricsState.Ready && lines.Count > 0)
+		{
+			int lo = 0, hi = lines.Count - 1;
+			double target = position + 0.02;
+			while (lo <= hi)
+			{
+				int mid = lo + (hi - lo) / 2;
+				if (lines[mid].TimeSeconds <= target) { index = mid; lo = mid + 1; }
+				else hi = mid - 1;
+			}
+		}
+		LyricLine line = index >= 0 ? lines[index] : default;
+		if (context != _contextKey)
+			return new LyricSnapshot(_contextKey, Volatile.Read(ref _contentRevision), TrackId,
+				LyricsState.Loading, "歌词加载中…", -1, 0, null, null);
+		return new LyricSnapshot(context, Volatile.Read(ref _contentRevision), TrackId,
+			state, _statusText, index, index >= 0 ? line.TimeSeconds : 0,
+			line.Text, line.Translation);
 	}
 
 	public static void Reset()

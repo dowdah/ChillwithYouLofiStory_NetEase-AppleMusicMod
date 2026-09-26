@@ -30,13 +30,13 @@ internal class MainThreadDispatcher : MonoBehaviour
 
 	public static void Enqueue(Action action)
 	{
-		if (action == null)
+		if (action == null || _quitting)
 		{
 			return;
 		}
 		lock (QueueLock)
 		{
-			Queue.Enqueue(action);
+			if (!_quitting) Queue.Enqueue(action);
 		}
 	}
 
@@ -54,9 +54,11 @@ internal class MainThreadDispatcher : MonoBehaviour
 	private void OnApplicationQuit()
 	{
 		_quitting = true;
+		lock (QueueLock) Queue.Clear();
 		BridgeLog.Info("游戏正在退出，停止所有后台轮询。");
 		NeteaseService.Shutdown();
 		AppleMusicService.Shutdown();
+		SystemMediaService.Shutdown();
 
 	}
 
@@ -68,7 +70,9 @@ internal class MainThreadDispatcher : MonoBehaviour
 			BridgeLog.Info("调度器心跳：第 " + _frames + " 帧仍在运行。");
 		}
 
+		if (_quitting) return;
 		BridgePanel.TickAlways();
+        SystemMediaService.Tick();
         NeteaseRuntime.Fm.Tick(!AudioOutputRecovery.OutputUnavailable);
 		while (true)
 		{

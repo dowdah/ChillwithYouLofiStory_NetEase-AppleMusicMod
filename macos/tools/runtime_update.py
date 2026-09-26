@@ -6,12 +6,20 @@ from pathlib import Path
 import shutil
 import subprocess
 import time
+import uuid
 
 PROJECT = Path(__file__).resolve().parents[2]
 RUNTIME = PROJECT/'macos/dist/ChillMusicMac'
 STAGE = PROJECT/'.local/native-staging'
 LEGACY_FILES = ['BepInEx/plugins/ChillWithYouMusicBridge/MusicBridge.Plugin.dll', 'Start-Music-Mod.command', 'launch-core.sh', 'libdoorstop.dylib']
-FILES = LEGACY_FILES + ['BepInEx/plugins/ChillWithYouMusicBridge/music.js', 'BepInEx/LICENSE.native-MIT', 'BepInEx/LICENSE.harmony-MIT', '使用说明.md', 'NATIVE-RUNTIME.md', 'TEST-REPORT.md', 'THIRD-PARTY-NOTICES.md']
+FILES = LEGACY_FILES + ['BepInEx/plugins/ChillWithYouMusicBridge/music.js',
+    'BepInEx/plugins/ChillWithYouMusicBridge/libmusicbridge_flac.dylib',
+    'BepInEx/plugins/ChillWithYouMusicBridge/libmusicbridge_media.dylib',
+    'BepInEx/plugins/ChillWithYouMusicBridge/LICENSE.dr_libs',
+    'BepInEx/LICENSE.native-MIT', 'BepInEx/LICENSE.harmony-MIT', '使用说明.md',
+    'NATIVE-RUNTIME.md', 'TEST-REPORT.md', 'THIRD-PARTY-NOTICES.md',
+    'EXPERIENCE-ENHANCEMENTS.md', 'MEDIA-CONTROL-POC.md']
+CONFIG_REL = 'BepInEx/plugins/ChillWithYouMusicBridge/config/musicbridge.options.json'
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('action',choices=['apply','rollback']);args=p.parse_args()
@@ -29,7 +37,11 @@ def main():
             if (RUNTIME/rel).is_file():
                 target=backup/rel;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(RUNTIME/rel,target)
             else:absent.append(rel)
-        record={'backup':str(backup),'absent':absent,'files':FILES}
+        config_present=(RUNTIME/CONFIG_REL).is_file()
+        if config_present:
+            target=backup/CONFIG_REL;target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(RUNTIME/CONFIG_REL,target)
+        record={'backup':str(backup),'absent':absent,'files':FILES,'config_present':config_present}
         manifest.write_text(json.dumps(record,indent=2))
         try:
             shutil.rmtree(RUNTIME/'BepInEx/core')
@@ -50,11 +62,23 @@ def restore(record):
     if any(rel not in FILES for rel in files):raise RuntimeError('无效备份文件列表。')
     for rel in files:
         if rel not in record['absent'] and not (backup/rel).is_file():raise RuntimeError('备份不完整：'+rel)
+    if record.get('config_present') and not (backup/CONFIG_REL).is_file():raise RuntimeError('配置备份不完整。')
+    if 'config_present' in record:
+        current=RUNTIME/CONFIG_REL
+        if current.is_file():
+            saved=backup/('config-before-rollback-'+time.strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex+'.json')
+            shutil.copy2(current,saved)
     shutil.rmtree(RUNTIME/'BepInEx/core')
     shutil.copytree(backup/'core',RUNTIME/'BepInEx/core')
     for rel in files:
         if rel in record['absent']:(RUNTIME/rel).unlink(missing_ok=True)
         else:shutil.copy2(backup/rel,RUNTIME/rel)
+    if 'config_present' in record:
+        current=RUNTIME/CONFIG_REL
+        if record['config_present']:
+            current.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(backup/CONFIG_REL,current)
+        else:current.unlink(missing_ok=True)
 
 if __name__=='__main__':
     try:main()

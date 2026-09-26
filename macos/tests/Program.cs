@@ -28,6 +28,10 @@ internal static class Program
         NeteaseEnhancementTests.Run();
         FlacTests.Run();
         PrefetchTests.Run();
+        ShuffleNavigatorTests.Run();
+        SettingsTests.Run();
+        CacheSafetyTests.Run();
+        MediaCommandGateTests.Run();
         var tree = new List<AmPlaylist> { new AmPlaylist { Name = "测试 \"歌单\"\n🎵", PersistentId = "ABC", DeclaredCount = 1, TrackState = AmTrackState.Loaded, TracksComplete = true, ChildrenLoaded = true } };
         tree[0].Tracks.Add(new AmTrack { Name = "Track", PersistentId = "DEF", Artists = "艺术家", RowIndex = 0, DurationText = "3:05" });
         AmValidation validation;
@@ -71,6 +75,13 @@ internal static class Program
     }
 }
 namespace MusicBridge {
+    internal static class MainThreadDispatcher { public static void Enqueue(Action action) => action(); }
+    internal sealed class AudioPlayer { public static AudioPlayer Instance => null; public void ApplySettings(MusicBridgeOptions a, MusicBridgeOptions b) {} }
+    internal struct PlaybackSnapshot {
+        public string Title, Artist, TrackKey; public long OwnerEpoch; public PlaybackState State;
+        public bool DesiredPlaying, CanPlay, CanPause, CanNext, CanPrevious, CanSeek;
+        public double Position, Duration;
+    }
     internal static class BridgeLog {
         public static void Info(string s) {} public static void Warn(string s) { Console.WriteLine("WARN: " + s); }
         public static void Error(string s) { Console.WriteLine("ERROR: " + s); } public static void History(string s) {}

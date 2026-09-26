@@ -28,6 +28,7 @@
     <Reference Include="$(GameManagedDir)/UnityEngine.TextRenderingModule.dll"><Private>false</Private></Reference>
     <Reference Include="$(GameManagedDir)/UnityEngine.UnityWebRequestAudioModule.dll"><Private>false</Private></Reference>
     <Reference Include="$(GameManagedDir)/UnityEngine.ImageConversionModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(GameManagedDir)/UnityEngine.InputLegacyModule.dll"><Private>false</Private></Reference>
     <Reference Include="$(GameManagedDir)/UnityEngine.UnityWebRequestTextureModule.dll"><Private>false</Private></Reference>
     <Reference Include="../../Chill with You Lo-Fi Story/BepInEx/core/BepInEx.dll"><Private>false</Private></Reference>
   <Reference Include="../../Chill with You Lo-Fi Story/BepInEx/core/0Harmony.dll"><Private>false</Private></Reference>

@@ -44,18 +44,19 @@ internal static class PrefetchTests
             // Route only the test's download URL to a local HTTP fixture server. API
             // parsing still exercises the production HTTPS and fresh-metadata checks.
             NeteaseAudioPrefetch.TestDownloadUrl = "http://127.0.0.1:" + port + "/test";
-            using var job = new NeteaseAudioPrefetch(id, NeteaseQuality.HiRes, context, 1);
+            using var job = new NeteaseAudioPrefetch(id, NeteaseQuality.HiRes, context, 1, 42);
             try
             {
                 Wait(() => job.Done);
                 var fresh = NeteaseApi.GetPlaybackSource(id, NeteaseQuality.HiRes, context, null).Value;
                 var changed = NeteaseApi.GetPlaybackSource(id, NeteaseQuality.HiRes, context, null).Value;
                 changed.SizeBytes++;
-                Check(job.Take(context, changed) == null, "changed authorization metadata cannot reuse prefetch " + flac);
-                Check(job.Take(new NeteaseAccountContext(90001, new CookieContainer(), ""), fresh) == null, "new account context cannot take old prefetch " + flac);
-                var file = job.Take(context, fresh);
+                Check(job.Take(context, changed, 42) == null, "changed authorization metadata cannot reuse prefetch " + flac);
+                Check(job.Take(new NeteaseAccountContext(90001, new CookieContainer(), ""), fresh, 42) == null, "new account context cannot take old prefetch " + flac);
+                Check(job.Take(context, fresh, 41) == null, "stale next plan cannot claim prefetch " + flac);
+                var file = job.Take(context, fresh, 42);
                 Check(file != null && fresh.WasPrefetched && calls == 3, "freshly authorized foreground takes completed file " + flac);
-                Check(job.Take(context, fresh) == null, "prefetch transfer occurs once " + flac);
+                Check(job.Take(context, fresh, 42) == null, "prefetch transfer occurs once " + flac);
                 string path = file.Path;
                 if (flac)
                 {

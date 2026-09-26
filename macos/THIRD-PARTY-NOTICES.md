@@ -20,7 +20,9 @@
 
 ## 测试与本机引用
 
-测试工程通过 NuGet 使用 Newtonsoft.Json 13.0.3。游戏的 Unity、TextMeshPro、Newtonsoft.Json 等 DLL 仅作为本机编译引用，项目不复制或上传这些游戏资源。
+测试工程优先引用本机游戏自带的 Newtonsoft.Json；没有该引用时由 NuGet 获取 13.0.3。游戏的 Unity、TextMeshPro、Newtonsoft.Json 等 DLL 仅作为本机编译引用，项目不复制或上传这些游戏资源。
+
+`libmusicbridge_media.dylib` 只链接 macOS 自带的公开 Foundation 与 MediaPlayer 系统框架，由本仓库源码本地构建；没有引入新的第三方媒体控制库或常驻 helper。
 
 构建得到的运行目录是本地使用产物。如果将来单独制作二进制发布包，应先逐项收齐其包含的组件许可/通知，并从干净构建产物打包，不能直接分享使用过的运行目录。
 

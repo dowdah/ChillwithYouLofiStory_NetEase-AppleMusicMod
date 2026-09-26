@@ -5,6 +5,8 @@ namespace MusicBridge;
 internal sealed partial class AudioPlayer
 {
     private NeteaseAudioPrefetch _prefetch;
+    internal string PrefetchStatus => _prefetch == null ? "空" :
+        (_prefetch.Done ? "已准备" : "准备中") + "（目标ID已脱敏，音质 " + NeteaseQualityPolicy.Label(_prefetch.Quality) + "）";
     private void CancelPrefetch() { var prefetch = _prefetch; _prefetch = null; prefetch?.Dispose(); }
     private void TickPrefetch()
     {
@@ -25,7 +27,13 @@ internal sealed partial class AudioPlayer
         }
         if (Time.realtimeSinceStartup - _trackStartedAt < 2) return;
         TrackInfo next = null;
+        long planId = 0;
         if (IsFm) { if (!NeteaseRuntime.Fm.Suspended) next = NeteaseRuntime.Fm.PeekNext; }
+        else if (Shuffle && options.NoRepeatShuffle && !RepeatOne)
+        {
+            var plan = _shuffleNavigator.PeekNext(RepeatQueue);
+            if (plan.HasValue) { next = _queue[plan.Value.QueueIndex]; planId = plan.Value.Id; }
+        }
         else if (!Shuffle && !RepeatOne && _queue.Count > 1)
         {
             int start = _index + 1;
@@ -38,8 +46,9 @@ internal sealed partial class AudioPlayer
         }
         if (next == null || !next.Playable || next.Id == CurrentTrack?.Id) { CancelPrefetch(); return; }
         if (_prefetch != null && _prefetch.SongId == next.Id && _prefetch.Quality == options.PreferredQuality &&
-            ReferenceEquals(_prefetch.Context, context) && _prefetch.Generation == _generation) return;
+            ReferenceEquals(_prefetch.Context, context) && _prefetch.Generation == _generation &&
+            _prefetch.PlanId == planId) return;
         CancelPrefetch();
-        _prefetch = new NeteaseAudioPrefetch(next.Id, options.PreferredQuality, context, _generation);
+        _prefetch = new NeteaseAudioPrefetch(next.Id, options.PreferredQuality, context, _generation, planId);
     }
 }

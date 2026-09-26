@@ -7,7 +7,7 @@ using Newtonsoft.Json;
 
 namespace MusicBridge;
 
-internal static class AudioDiskCache
+internal static partial class AudioDiskCache
 {
     internal sealed class Entry
     {
@@ -40,7 +40,7 @@ internal static class AudioDiskCache
                 File = null;
             }
             // Leases may close on the main thread: disk cleanup must not block it.
-            if (remove != null) System.Threading.ThreadPool.QueueUserWorkItem(_ => { try { System.IO.File.Delete(BridgePaths.ValidateWritePath(remove)); } catch { } });
+            if (remove != null) System.Threading.ThreadPool.QueueUserWorkItem(_ => { try { SafeCacheFiles.DeleteRegular(remove); } catch { } });
         }
     }
     private static readonly object Gate = new object();
@@ -60,7 +60,7 @@ internal static class AudioDiskCache
         {
             string directory = BridgePaths.ValidateWritePath(System.IO.Path.Combine(Root, "v2", "work"));
             Directory.CreateDirectory(directory);
-            string file = BridgePaths.ValidateWritePath(System.IO.Path.Combine(directory, Guid.NewGuid().ToString("N") + ".part"));
+            string file = TemporarySessionRegistry.NewFile(directory);
             Pin(file);
             return new Lease { File = file, Uri = new Uri(file).AbsoluteUri, DeleteOnDispose = true };
         }
@@ -182,7 +182,7 @@ internal static class AudioDiskCache
                 string index = IndexPath(account, source);
                 bool existed = System.IO.File.Exists(file);
                 AtomicFile.WriteAllBytes(file, bytes);
-                if (!current()) { if (!existed && !Pinned(file)) System.IO.File.Delete(file); return; }
+                if (!current()) { if (!existed && !Pinned(file)) SafeCacheFiles.DeleteRegular(file); return; }
                 var entry = new Entry { Account = account, SongId = source.SongId, Requested = source.RequestedQuality, Bitrate = source.Bitrate,
                     Format = source.Format, File = name, Hash = hash, Size = bytes.LongLength, ServerMd5 = source.ServerMd5, ReturnedLevel = source.ReturnedLevel,
                     Trial = source.IsTrial, TrialStart = source.TrialStartSeconds, TrialEnd = source.TrialEndSeconds };
@@ -201,11 +201,12 @@ internal static class AudioDiskCache
                 string index = IndexPath(account, source);
                 if (!File.Exists(index)) return;
                 var entry = JsonConvert.DeserializeObject<Entry>(File.ReadAllText(index));
-                File.Delete(BridgePaths.ValidateWritePath(index));
+                SafeCacheFiles.DeleteRegular(index);
                 if (entry != null && Path.GetFileName(entry.File) == entry.File)
                 {
                     string file = BridgePaths.ValidateWritePath(Path.Combine(Partition(account), entry.File));
-                    if (!Pinned(file) && File.Exists(file)) File.Delete(file);
+                    var others = Indexed(account, out _, out _);
+                    if (!Pinned(file) && !others.Any(e => e.Audio == file) && File.Exists(file)) SafeCacheFiles.DeleteRegular(file);
                 }
             }
             catch { BridgeLog.Warn("失效音频缓存清理失败。"); }
@@ -213,39 +214,7 @@ internal static class AudioDiskCache
     }
     private static void Evict()
     {
-        if (!Directory.Exists(Root)) return;
-        // Scan only our regular directories; never follow a user-created symlink.
-        var files = new List<FileInfo>();
-        Collect(new DirectoryInfo(Root), files);
-        long total = files.Sum(f => f.Length);
-        var referenced = new HashSet<string>();
-        var entries = new List<Tuple<FileInfo, string>>();
-        foreach (var info in files.Where(f => f.Extension == ".json"))
-        {
-            try
-            {
-                var entry = JsonConvert.DeserializeObject<Entry>(File.ReadAllText(info.FullName));
-                if (entry != null && Path.GetFileName(entry.File) == entry.File)
-                { string audio = Path.Combine(info.DirectoryName, entry.File); referenced.Add(audio); entries.Add(Tuple.Create(info, audio)); }
-            }
-            catch { }
-        }
-        foreach (var index in files.Where(f => f.Extension == ".json" && !entries.Any(e => e.Item1.FullName == f.FullName)))
-        { long size = index.Length; File.Delete(BridgePaths.ValidateWritePath(index.FullName)); total -= size; }
-        foreach (var info in files.Where(f => f.Extension != ".json" && !referenced.Contains(f.FullName)).OrderBy(f => f.LastAccessTimeUtc))
-        {
-            bool orphan = info.FullName.Contains(Path.DirectorySeparatorChar + "v2" + Path.DirectorySeparatorChar);
-            if (!Pinned(info.FullName) && (total > MusicBridgeOptions.Current.Netease.AudioCacheCapacityBytes || orphan))
-            { File.Delete(BridgePaths.ValidateWritePath(info.FullName)); total -= info.Length; }
-        }
-        foreach (var entry in entries.OrderBy(e => e.Item1.LastAccessTimeUtc))
-        {
-            if (total <= MusicBridgeOptions.Current.Netease.AudioCacheCapacityBytes) break;
-            if (Pinned(entry.Item2)) continue;
-            File.Delete(BridgePaths.ValidateWritePath(entry.Item1.FullName)); total -= entry.Item1.Length;
-            var audio = new FileInfo(entry.Item2);
-            if (audio.Exists) { long size = audio.Length; File.Delete(BridgePaths.ValidateWritePath(audio.FullName)); total -= size; }
-        }
+        EvictSafely();
     }
     private static void Collect(DirectoryInfo directory, List<FileInfo> files)
     {

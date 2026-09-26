@@ -27,6 +27,7 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 	private AudioSource _source;
 
 	private int _generation;
+	private long _sessionEpoch;
 
 	private Coroutine _loadRoutine;
 
@@ -47,7 +48,32 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 
 	public bool RepeatOne;
 
-	public bool Shuffle;
+	private bool _shuffle;
+	public bool Shuffle
+	{
+		get => _shuffle;
+		set
+		{
+			if (_shuffle == value) return;
+			_shuffle = value;
+			_shuffleNavigator.Begin(ShuffleCandidates(), CurrentTrack?.Id ?? 0);
+			if (State == PlaybackState.Playing && CurrentTrack != null)
+				_shuffleNavigator.ConfirmPlaying(CurrentTrack.Id);
+			CancelPrefetch();
+		}
+	}
+
+	private readonly ShuffleNavigator _shuffleNavigator = new ShuffleNavigator();
+	private long _consumedPlanId;
+	private bool UseNoRepeatShuffle => Shuffle && MusicBridgeOptions.Current.Netease.NoRepeatShuffle && !IsFm;
+	private List<ShuffleNavigator.Candidate> ShuffleCandidates()
+	{
+		var result = new List<ShuffleNavigator.Candidate>();
+		for (int i = 0; i < _queue.Count; i++)
+			if (_queue[i] != null && _queue[i].Playable)
+				result.Add(new ShuffleNavigator.Candidate(_queue[i].Id, i));
+		return result;
+	}
 
 	private readonly System.Random _rng = new System.Random();
 
@@ -86,6 +112,16 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 	public int QueueIndex => _index;
 
 	public int QueueCount => _queue.Count;
+	public int PlaybackGeneration => _generation;
+	public long SessionEpoch => _sessionEpoch;
+	public bool DesiredPlaying => State == PlaybackState.Loading ? _playAfterLoad : State == PlaybackState.Playing;
+	public bool CanNext => IsFm ? (!NeteaseRuntime.Fm.Waiting && !NeteaseRuntime.Fm.Suspended) :
+		_queue.Count > 0 && (UseNoRepeatShuffle ? _shuffleNavigator.PeekNext(RepeatQueue).HasValue :
+		    (RepeatQueue || FirstPlayableFrom(_index + 1, false, out _) >= 0));
+	public bool CanPrevious => IsFm ? (NeteaseRuntime.Fm.CanPrevious && !NeteaseRuntime.Fm.Suspended) :
+		CurrentTrack != null && (PositionSeconds > 3f ||
+		    (UseNoRepeatShuffle ? _shuffleNavigator.CanPrevious :
+		     RepeatQueue || FirstPlayableBefore(_index - 1, false, out _) >= 0));
 
 	public bool IsActive
 	{
@@ -145,6 +181,21 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		}
 	}
 
+	internal void ApplySettings(MusicBridgeOptions previous, MusicBridgeOptions next)
+	{
+		RepeatQueue = next.Netease.RepeatQueue;
+		if (previous.Netease.PreferredQuality != next.Netease.PreferredQuality ||
+		    !next.Netease.NextAudioPreload ||
+		    previous.Netease.NoRepeatShuffle != next.Netease.NoRepeatShuffle)
+			CancelPrefetch();
+		if (previous.Netease.NoRepeatShuffle != next.Netease.NoRepeatShuffle && Shuffle)
+		{
+			_shuffleNavigator.Begin(ShuffleCandidates(), CurrentTrack?.Id ?? 0);
+			if (State == PlaybackState.Playing && CurrentTrack != null)
+				_shuffleNavigator.ConfirmPlaying(CurrentTrack.Id);
+		}
+	}
+
 	public event Action StateChanged;
 
 	public event Action<TrackInfo> TrackChanged;
@@ -186,10 +237,14 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 	{
 		if (tracks != null && tracks.Count != 0)
 		{
+            _sessionEpoch++;
+            CancelPrefetch();
             NeteaseRuntime.Fm.End();
 			_queue = new List<TrackInfo>(tracks);
 			_shuffleHistory.Clear();
 			_index = Mathf.Clamp(startIndex, 0, _queue.Count - 1);
+			_shuffleNavigator.Begin(ShuffleCandidates(), _queue[_index]?.Id ?? 0);
+			_consumedPlanId = 0;
 			Source = source;
 			SourceName = sourceName ?? "";
 			BridgeLog.History("建立播放队列：来源=" + source.ToString() + "『" + SourceName + "』共 " + _queue.Count + " 首，从第 " + (_index + 1) + " 首开始。");
@@ -237,8 +292,18 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		{
 			return;
 		}
+		if (UseNoRepeatShuffle)
+		{
+			var plan = _shuffleNavigator.PeekNext(RepeatQueue);
+			if (!plan.HasValue) { Stop(); BridgeLog.Info("随机播放一轮结束，停止播放。"); return; }
+			if (!_shuffleNavigator.Consume(plan.Value.Id)) return;
+			_consumedPlanId = plan.Value.Id;
+			PlayIndex(plan.Value.QueueIndex);
+			return;
+		}
 		if (Shuffle && _queue.Count > 1)
 		{
+			_consumedPlanId = 0;
 			int num = _index;
 			for (int i = 0; i < 8; i++)
 			{
@@ -276,6 +341,7 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 			return;
 		}
 		int num3 = _index + 1;
+		_consumedPlanId = 0;
 		if (num3 >= _queue.Count)
 		{
 			if (!RepeatQueue)
@@ -320,15 +386,24 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 			Seek(0f);
 			return;
 		}
+		if (UseNoRepeatShuffle)
+		{
+			int? previous = _shuffleNavigator.Previous();
+			if (previous.HasValue) PlayIndex(previous.Value);
+			else Seek(0f);
+			return;
+		}
 		int index;
 		if (Shuffle && _shuffleHistory.Count > 0)
 		{
+			_consumedPlanId = 0;
 			index = _shuffleHistory[_shuffleHistory.Count - 1];
 			_shuffleHistory.RemoveAt(_shuffleHistory.Count - 1);
 			PlayIndex(index);
 			return;
 		}
 		index = _index - 1;
+		_consumedPlanId = 0;
 		if (index < 0)
 		{
 			if (!RepeatQueue)
@@ -362,6 +437,13 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 	{
 		if (index >= 0 && index < _queue.Count)
 		{
+			if (UseNoRepeatShuffle && index == _index && CurrentTrack != null &&
+			    CurrentTrack.Id == _queue[index].Id && State == PlaybackState.Playing)
+			{
+				Seek(0f);
+				if (_flacStream == null && _source != null && !_source.isPlaying) _source.Play();
+				return;
+			}
 			_index = index;
 			PlayTrack(_queue[index]);
 		}
@@ -369,6 +451,9 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 
     public void PlayFmTrack(TrackInfo track)
     {
+        if (Source != QueueSource.PersonalFm) _sessionEpoch++;
+        CancelPrefetch(); _shuffleNavigator.InvalidatePlan();
+        _consumedPlanId = 0;
         Source = QueueSource.PersonalFm; SourceName = "私人FM";
         _queue.Clear(); _index = -1;
         if (CurrentTrack != null && CurrentTrack.Id == track.Id && State == PlaybackState.Loading)
@@ -377,6 +462,7 @@ internal sealed partial class AudioPlayer : MonoBehaviour
     }
     public void WaitForFm()
     {
+        if (Source != QueueSource.PersonalFm) _sessionEpoch++;
         AbortActiveRequest(); CancelUrlLookup(); _generation++;
         if (_loadRoutine != null) { StopCoroutine(_loadRoutine); _loadRoutine = null; }
         _source.Stop(); ReleaseClip(); _sawPlaying = false; CurrentTrack = null; PlaybackSource = null;
@@ -480,6 +566,7 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		_playAfterLoad = playAfterLoad;
 		_resumePositionAfterLoad = resumePosition;
         var context = NeteaseRuntime.Context;
+        long loadPlanId = _consumedPlanId;
         var preferred = _loadedQuality;
         var quality = attemptQuality ?? preferred;
         UrlLookupResult lookup = new UrlLookupResult();
@@ -500,7 +587,7 @@ internal sealed partial class AudioPlayer : MonoBehaviour
                 }
                 AudioDiskCache.Lease cache = null;
                 if (result.Ok && !cancellation.IsCancelled && context.Active && !bypassCache)
-                    cache = _prefetch?.Take(context, result.Value) ?? AudioDiskCache.TryGet(context.UserId, result.Value);
+                    cache = _prefetch?.Take(context, result.Value, loadPlanId) ?? AudioDiskCache.TryGet(context.UserId, result.Value);
                 lock (lookup.Gate)
                 {
                     lookup.Source = result.Value; lookup.Failure = result.Message; lookup.FailureCategory = result.Failure;
@@ -783,6 +870,28 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		}
 	}
 
+	public bool EnsurePlaying()
+	{
+		if (CurrentTrack == null || PlaybackCoordinator.StoryYielding) return false;
+		if (State == PlaybackState.Loading) { _playAfterLoad = true; Notify(); return true; }
+		if (State == PlaybackState.Playing) return true;
+		if (State != PlaybackState.Paused) return false;
+		if (IsFm && NeteaseRuntime.Fm.Suspended) NeteaseRuntime.ResumeFm();
+		else TogglePlayPause();
+		return true;
+	}
+
+	public bool EnsurePaused()
+	{
+		if (CurrentTrack == null) return false;
+		PlaybackCoordinator.CancelStoryResume();
+		if (State == PlaybackState.Loading) { _playAfterLoad = false; Notify(); return true; }
+		if (State == PlaybackState.Paused) return true;
+		if (State != PlaybackState.Playing) return false;
+		PauseIfPlaying();
+		return true;
+	}
+
 	public void PauseIfPlaying()
 	{
         CancelPrefetch();
@@ -815,6 +924,7 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 
 	public void Stop()
 	{
+        _sessionEpoch++;
         CancelPrefetch();
         NeteaseRuntime.Fm.End(); PlaybackSource = null;
         if (_loadRoutine != null) { StopCoroutine(_loadRoutine); _loadRoutine = null; }
@@ -958,6 +1068,8 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 
 	private void Notify()
 	{
+		if (State == PlaybackState.Playing && CurrentTrack != null && !IsFm)
+			_shuffleNavigator.ConfirmPlaying(CurrentTrack.Id);
 		try
 		{
 			if (this.StateChanged != null)

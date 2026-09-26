@@ -20,10 +20,11 @@ internal sealed class NeteaseAudioPrefetch : IDisposable
     public readonly NeteaseQuality Quality;
     public readonly NeteaseAccountContext Context;
     public readonly int Generation;
+    public readonly long PlanId;
     public bool Done => Volatile.Read(ref _done) != 0;
-    public NeteaseAudioPrefetch(long songId, NeteaseQuality quality, NeteaseAccountContext context, int generation)
+    public NeteaseAudioPrefetch(long songId, NeteaseQuality quality, NeteaseAccountContext context, int generation, long planId = 0)
     {
-        SongId = songId; Quality = quality; Context = context; Generation = generation;
+        SongId = songId; Quality = quality; Context = context; Generation = generation; PlanId = planId;
         new Thread(Work) { IsBackground = true, Name = "MusicBridge-Prefetch" }.Start();
     }
     private bool Cancelled => Volatile.Read(ref _closed) != 0 || !Context.Active;
@@ -75,11 +76,12 @@ internal sealed class NeteaseAudioPrefetch : IDisposable
             lock (_gate) { _preparation = null; Volatile.Write(ref _done, 1); }
         }
     }
-    public AudioDiskCache.Lease Take(NeteaseAccountContext context, NeteasePlaybackSource fresh)
+    public AudioDiskCache.Lease Take(NeteaseAccountContext context, NeteasePlaybackSource fresh, long planId = 0)
     {
         lock (_gate)
         {
-            if (Cancelled || !Done || !ReferenceEquals(context, Context) || _file == null || !AudioDiskCache.SameSource(_source, fresh)) return null;
+            if (Cancelled || !Done || !ReferenceEquals(context, Context) || _file == null ||
+                PlanId != planId || !AudioDiskCache.SameSource(_source, fresh)) return null;
             var file = _file; _file = null;
             fresh.WasPrefetched = true;
             Volatile.Write(ref _closed, 1);

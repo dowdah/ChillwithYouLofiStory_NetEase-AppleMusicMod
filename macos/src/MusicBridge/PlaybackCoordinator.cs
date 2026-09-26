@@ -15,6 +15,9 @@ internal static class PlaybackCoordinator
 	private static readonly HashSet<string> SuppressLogged = new HashSet<string>();
 
 	private static bool _yieldedForStory;
+	private static bool _resumeAfterStory;
+	internal static bool StoryYielding => _yieldedForStory;
+	internal static void CancelStoryResume() { if (_yieldedForStory) _resumeAfterStory = false; }
 
 	private static MusicProvider _storyYieldWho;
 
@@ -102,6 +105,7 @@ internal static class PlaybackCoordinator
 			return;
 		}
 		_yieldedForStory = true;
+		_resumeAfterStory = true;
 		_storyYieldWho = current.Id;
 		try
 		{
@@ -121,6 +125,11 @@ internal static class PlaybackCoordinator
 			return;
 		}
 		_yieldedForStory = false;
+		if (!_resumeAfterStory)
+		{
+			BridgeLog.Info("剧情结束：用户已要求保持暂停，不自动恢复音乐。");
+			return;
+		}
 		MusicProvider storyYieldWho = _storyYieldWho;
 		try
 		{
