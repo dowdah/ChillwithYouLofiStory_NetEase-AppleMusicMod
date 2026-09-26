@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using MusicBridge;
 
 internal static class ShuffleNavigatorTests
@@ -56,6 +57,22 @@ internal static class ShuffleNavigatorTests
         }
         Check(unique.Count == 1000 && !big.PeekNext(false).HasValue,
             "1000-song round and 1000 read-only peeks are complete");
+        var tenThousand = new List<ShuffleNavigator.Candidate>();
+        for (int i = 0; i < 10000; i++) tenThousand.Add(new ShuffleNavigator.Candidate(i + 1, i));
+        var largeWatch = Stopwatch.StartNew();
+        var veryLarge = new ShuffleNavigator(23);
+        veryLarge.Begin(tenThousand, 5001);
+        veryLarge.ConfirmPlaying(5001);
+        var seenLarge = new HashSet<long> { 5001 };
+        for (int i = 1; i < 10000; i++)
+        {
+            var plan = veryLarge.PeekNext(false).Value;
+            Expect(seenLarge.Add(plan.SongId) && veryLarge.Consume(plan.Id), "10000-song permutation");
+            veryLarge.ConfirmPlaying(plan.SongId);
+        }
+        largeWatch.Stop();
+        Check(seenLarge.Count == 10000 && !veryLarge.PeekNext(false).HasValue,
+            "10000-song round is complete, elapsed_ms=" + largeWatch.ElapsedMilliseconds);
         var empty = new ShuffleNavigator(1);
         empty.Begin(Array.Empty<ShuffleNavigator.Candidate>(), 0);
         Check(!empty.PeekNext(true).HasValue, "empty queue has no plan");

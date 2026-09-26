@@ -81,12 +81,23 @@ internal sealed class MusicBridgeOptions
             AudioDiskCache.EnforceCapacityAsync();
     }
 
+    internal static bool PublishIfCurrent(SettingsSaveResult result)
+    {
+        if (result == null || result.Options == null || !Store.IsCurrent(result)) return false;
+        Publish(result.Options);
+        return true;
+    }
+
     public static void SaveQualityAsync(NeteaseQuality quality, Action<string> completed)
     {
         if (!CanSave) { completed?.Invoke("配置版本或内容不受支持；请先修复配置文件"); return; }
         var baseline = Store.Capture(Current);
         Store.SavePatchAsync(baseline, new JObject { ["Netease"] = new JObject { ["PreferredQuality"] = (int)quality } },
-            result => { if (result.Success) Publish(result.Options); completed?.Invoke(result.Error); });
+            result =>
+            {
+                bool published = PublishIfCurrent(result);
+                completed?.Invoke(result.Success && !published ? "设置随后又被更新；请重新打开设置" : result.Error);
+            });
     }
 
 	internal static void Validate(MusicBridgeOptions o)

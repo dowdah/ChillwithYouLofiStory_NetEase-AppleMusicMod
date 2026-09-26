@@ -37,6 +37,7 @@ internal sealed class ShuffleNavigator
     public long QueueEpoch { get; private set; }
     public long RoundId { get; private set; }
     public int HistoryCursor => _historyCursor;
+    public long PreparedPlanId => _prepared?.Id ?? 0;
     public bool CanPrevious => _historyCursor > 0 || (_pending.HasValue && _historyCursor >= 0);
 
     public ShuffleNavigator(int? seed = null) { _random = seed.HasValue ? new Random(seed.Value) : new Random(); }

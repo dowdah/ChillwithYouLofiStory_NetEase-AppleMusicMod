@@ -101,7 +101,7 @@ internal static partial class AudioDiskCache
                     SampleRate = source.SampleRate, BitsPerSample = source.BitsPerSample, Channels = source.Channels, PcmFrames = source.PcmFrames };
                 AtomicFile.WriteAllText(index, JsonConvert.SerializeObject(entry));
                 // Playback keeps the temporary lease; no rename races with an open decoder.
-                Evict();
+                EnforceCapacityAsync();
             }
             catch { BridgeLog.Warn("FLAC缓存登记失败，本次临时文件继续播放。"); }
             finally { if (staging != null) try { System.IO.File.Delete(staging); } catch { } }
@@ -187,7 +187,7 @@ internal static partial class AudioDiskCache
                     Format = source.Format, File = name, Hash = hash, Size = bytes.LongLength, ServerMd5 = source.ServerMd5, ReturnedLevel = source.ReturnedLevel,
                     Trial = source.IsTrial, TrialStart = source.TrialStartSeconds, TrialEnd = source.TrialEndSeconds };
                 AtomicFile.WriteAllText(index, JsonConvert.SerializeObject(entry));
-                Evict();
+                EnforceCapacityAsync();
             }
             catch { BridgeLog.Warn("音频缓存写入失败，本次播放不受影响。"); }
         }
@@ -211,10 +211,6 @@ internal static partial class AudioDiskCache
             }
             catch { BridgeLog.Warn("失效音频缓存清理失败。"); }
         }
-    }
-    private static void Evict()
-    {
-        EvictSafely();
     }
     private static void Collect(DirectoryInfo directory, List<FileInfo> files)
     {

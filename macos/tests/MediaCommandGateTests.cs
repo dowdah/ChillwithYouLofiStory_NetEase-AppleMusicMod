@@ -9,10 +9,11 @@ internal static class MediaCommandGateTests
 
     public static void Run()
     {
-        Check(Marshal.SizeOf<NativeMediaSnapshot>() == 64 && Marshal.SizeOf<NativeMediaCommand>() == 64,
-            "native media ABI structs have fixed 64-byte layout");
+        Check(Marshal.SizeOf<NativeMediaSnapshot>() == 64 && Marshal.SizeOf<NativeMediaCommand>() == 64 &&
+            Marshal.SizeOf<NativeMediaDiagnostics>() == 40,
+            "native media ABI structs have fixed layouts");
         var gate = new MediaCommandGate();
-        NativeMediaCommand command = new NativeMediaCommand { Abi = 1, Size = 64,
+        NativeMediaCommand command = new NativeMediaCommand { Abi = 2, Size = 64,
             OwnerEpoch = 8, TrackToken = 100, Sequence = 1, Type = (int)MediaCommandKind.Next,
             AgeSeconds = 0.05 };
         Check(gate.Accept(command, 8, 100, true), "first Next accepted");

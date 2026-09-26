@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading;
+using Newtonsoft.Json;
 using MusicBridge;
 
 internal static class CacheSafetyTests
@@ -35,6 +36,24 @@ internal static class CacheSafetyTests
             catch (InvalidOperationException) { rejected = true; }
             catch (IOException) { rejected = true; }
             Check(rejected && File.Exists(marker), "symlinked directory cannot redirect deletion");
+
+            long account = DateTime.UtcNow.Ticks;
+            string partition = Path.Combine(AudioDiskCache.Root, "v2", "netease", account.ToString());
+            Directory.CreateDirectory(partition);
+            try
+            {
+                string hash = new string('a', 64);
+                string audio = Path.Combine(partition, "1-full-128-128000-" + hash + ".mp3");
+                string forgedIndex = Path.Combine(partition, "1-320-full.json");
+                File.WriteAllBytes(audio, new byte[] { 255, 251, 144, 0, 0, 0, 0, 0 });
+                File.WriteAllText(forgedIndex, JsonConvert.SerializeObject(new AudioDiskCache.Entry
+                { Account = account, SongId = 1, Size = 8, Requested = NeteaseQuality.Standard,
+                    Bitrate = 128000, Format = "mp3", File = Path.GetFileName(audio), Hash = hash, Trial = false }));
+                Check(AudioDiskCache.BuildCleanupPlan(account).FileCount == 0 &&
+                    File.Exists(audio) && File.Exists(forgedIndex),
+                    "index name must match owned song and quality before cleanup eligibility");
+            }
+            finally { Directory.Delete(partition, true); }
 
             string work = Path.Combine(AudioDiskCache.Root, "v2", "work");
             Directory.CreateDirectory(work);

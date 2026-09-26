@@ -10,6 +10,7 @@ static pthread_mutex_t g_gate = PTHREAD_MUTEX_INITIALIZER;
 static mb_media_command g_queue[64];
 static unsigned g_head, g_count;
 static uint64_t g_sequence, g_epoch, g_track_token;
+static uint64_t g_received, g_accepted, g_rejected;
 static int32_t g_active, g_capabilities, g_registered;
 static MPRemoteCommand *g_commands[6];
 static id g_tokens[6];
@@ -28,13 +29,16 @@ static void on_main(dispatch_block_t block) {
 
 static MPRemoteCommandHandlerStatus received(int type, double seek) {
     pthread_mutex_lock(&g_gate);
+    g_received++;
     int flag = type == MB_MEDIA_PLAY ? 1 : type == MB_MEDIA_PAUSE ? 2 :
         type == MB_MEDIA_NEXT ? 4 : type == MB_MEDIA_PREVIOUS ? 8 : type == MB_MEDIA_SEEK ? 16 : 3;
     if (!g_active || !(g_capabilities & flag)) {
+        g_rejected++;
         pthread_mutex_unlock(&g_gate);
         return MPRemoteCommandHandlerStatusNoActionableNowPlayingItem;
     }
     if (g_count == 64 || (type == MB_MEDIA_SEEK && (!isfinite(seek) || seek < 0))) {
+        g_rejected++;
         pthread_mutex_unlock(&g_gate);
         return MPRemoteCommandHandlerStatusCommandFailed;
     }
@@ -42,6 +46,7 @@ static MPRemoteCommandHandlerStatus received(int type, double seek) {
     g_queue[tail] = (mb_media_command){ MB_MEDIA_ABI, (uint32_t)sizeof(mb_media_command),
         ++g_sequence, g_epoch, g_track_token, type, 0, seek, monotonic_seconds(), 0 };
     g_count++;
+    g_accepted++;
     pthread_mutex_unlock(&g_gate);
     return MPRemoteCommandHandlerStatusSuccess; // accepted, not yet executed by Unity
 }
@@ -168,6 +173,17 @@ int32_t mb_media_registered_target_count(void) {
     int count = g_registered;
     pthread_mutex_unlock(&g_gate);
     return count;
+}
+
+int32_t mb_media_get_diagnostics(mb_media_diagnostics *out_diagnostics) {
+    if (out_diagnostics == NULL || out_diagnostics->abi != MB_MEDIA_ABI ||
+        out_diagnostics->size != sizeof(mb_media_diagnostics)) return 0;
+    pthread_mutex_lock(&g_gate);
+    *out_diagnostics = (mb_media_diagnostics){ MB_MEDIA_ABI,
+        (uint32_t)sizeof(mb_media_diagnostics), g_received, g_accepted, g_rejected,
+        g_count, (uint32_t)g_registered };
+    pthread_mutex_unlock(&g_gate);
+    return 1;
 }
 
 void mb_media_shutdown(void) {

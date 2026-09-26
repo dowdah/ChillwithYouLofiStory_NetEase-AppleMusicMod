@@ -2,7 +2,7 @@
 
 ## 原型边界
 
-本候选使用进程内 `MediaPlayer.framework` 的 `MPNowPlayingInfoCenter` 和 `MPRemoteCommandCenter`，由自有双架构 `libmusicbridge_media.dylib` 暴露 64 字节、ABI 1 的 C 结构。原生回调只写入 64 项有界 FIFO；Unity 常驻调度器最多每帧处理 16 条，超过 2 秒或音源 epoch 过期的命令被丢弃。连续 Next 保留各自序号。失去动态库、ABI 不符或公开 API 不可用时，普通播放继续工作。
+本候选使用进程内 `MediaPlayer.framework` 的 `MPNowPlayingInfoCenter` 和 `MPRemoteCommandCenter`，由自有双架构 `libmusicbridge_media.dylib` 暴露 64 字节命令/快照与 40 字节诊断结构，版本为 ABI 2。原生回调只写入 64 项有界 FIFO；Unity 常驻调度器最多每帧处理 16 条，超过 2 秒或音源 epoch 过期的命令被丢弃。连续 Next 保留各自序号。失去动态库、ABI 不符或公开 API 不可用时，普通播放继续工作。
 
 系统控制默认关闭。当前原型只发布已由用户实际选择的网易云歌曲；切到 Apple Music 时移除本 Mod 的注册目标和元数据，让 Music.app 接管。本地原生音乐代理尚未验证，因此原型不发布其系统会话。游戏内迷你条仍可走原有 Apple Music 控制链路。
 
@@ -10,8 +10,9 @@
 
 - 宿主待测：Steam 版游戏 1.17.3，Unity 2022.3.62f2，macOS 27.0 (26A428)，arm64。本记录尚无该游戏进程内的系统 UI 截图。
 - 原生 SDK：macOS 27.0；脚本 `bash macos/build-media-native.sh` 已在本机成功构建、签名并验证 arm64 与 x86_64 切片。x86_64 只有编译验证，没有 Intel 游戏实测。
-- `nm -gU` 已检查七个 `mb_media_*` 导出符号。`python3 -m unittest discover -s macos/tools -p 'test_*.py'` 包含 ABI、无会话初始化和无效快照拒绝测试。
-- 当前候选媒体 dylib 的 SHA-256 为 `7dbf36308926a139ed3b68f2add85b99b34a845f68aec3a80fc543973ca528cb`；当前托管 DLL 为 `853347d417d619357066bf68e648bc41fbde837c806e7d3914c668672bd037ed`。这些哈希只证明打包一致，不证明游戏宿主里的系统 UI 生效。
+- `nm -gU` 已检查八个 `mb_media_*` 导出符号。`python3 -m unittest discover -s macos/tools -p 'test_*.py'` 包含 ABI、无会话初始化、原生诊断和无效快照拒绝测试。
+- 当前候选媒体 dylib 的 SHA-256 为 `34a05144132d867278279cfb9ddc08a002185901949163d31ccb9536201712dd`；当前托管 DLL 为 `a77b56317043180f24d15371f73652900c071d0bdf4c13d79c52f2513ac387e8`。这些哈希只证明打包一致，不证明游戏宿主里的系统 UI 生效。
+- 原生层分别计数收到、入队与拒绝，暴露当前队列深度；托管层记录执行、过期丢弃和最近 64 条有效命令的受理延迟分布。只有至少 30 条有效命令时才显示 P95 数字。
 - 托管离线测试覆盖两条连续 Next、旧 seek、过期命令、旧 epoch、重复序号和重试序号重置。
 
 ## 游戏宿主验收（全部 NotRun）

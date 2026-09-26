@@ -7,7 +7,7 @@ namespace MusicBridge;
 internal sealed class MacSystemMediaBridge
 {
     private const string Library = "libmusicbridge_media";
-    private const uint Abi = 1;
+    private const uint Abi = 2;
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "mb_media_abi_version")]
     private static extern uint AbiVersion();
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "mb_media_initialize")]
@@ -20,23 +20,46 @@ internal sealed class MacSystemMediaBridge
     private static extern int PollNative(out NativeMediaCommand command);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "mb_media_registered_target_count")]
     private static extern int TargetCountNative();
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "mb_media_get_diagnostics")]
+    private static extern int DiagnosticsNative(ref NativeMediaDiagnostics diagnostics);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl, EntryPoint = "mb_media_shutdown")]
     private static extern void ShutdownNative();
 
     public bool Loaded { get; private set; }
+    public uint LoadedAbi { get; private set; }
     public string Error { get; private set; }
     public int RegisteredTargets
     {
         get { try { return Loaded ? TargetCountNative() : 0; } catch { return 0; } }
     }
 
+    public NativeMediaDiagnostics Diagnostics
+    {
+        get
+        {
+            var result = new NativeMediaDiagnostics { Abi = Abi,
+                Size = (uint)Marshal.SizeOf<NativeMediaDiagnostics>() };
+            try { if (Loaded && DiagnosticsNative(ref result) == 1) return result; }
+            catch (Exception ex) { Error = ex.GetType().Name; }
+            return default;
+        }
+    }
+
     public bool Initialize()
     {
+        LoadedAbi = 0;
         try
         {
+            uint version = AbiVersion();
+            LoadedAbi = version;
             if (Marshal.SizeOf<NativeMediaSnapshot>() != 64 || Marshal.SizeOf<NativeMediaCommand>() != 64 ||
-                AbiVersion() != Abi || InitializeNative() != 1)
+                Marshal.SizeOf<NativeMediaDiagnostics>() != 40 ||
+                version != Abi || InitializeNative() != 1)
                 throw new InvalidOperationException("媒体桥接ABI或系统API不可用");
+            var diagnostics = new NativeMediaDiagnostics { Abi = Abi,
+                Size = (uint)Marshal.SizeOf<NativeMediaDiagnostics>() };
+            if (DiagnosticsNative(ref diagnostics) != 1)
+                throw new InvalidOperationException("媒体桥接诊断ABI不可用");
             Loaded = true; Error = null;
             return true;
         }

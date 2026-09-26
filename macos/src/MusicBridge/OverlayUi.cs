@@ -31,6 +31,7 @@ internal static class OverlayUi
     private static float? _fontPreview, _opacityPreview;
     private static float _lastCanvasWidth, _lastCanvasHeight;
     private static float _nextCanvasSearch;
+    internal static int InstanceCount => (_lyrics != null ? 1 : 0) + (_mini != null ? 1 : 0);
     private static string _operationError;
     private static float _operationErrorUntil;
 
@@ -327,7 +328,7 @@ internal static class OverlayUi
             new JObject { ["Overlay"] = new JObject { [field] = value } },
             result =>
             {
-                if (result.Success) MusicBridgeOptions.Publish(result.Options);
+                if (result.Success) MusicBridgeOptions.PublishIfCurrent(result);
                 else
                 {
                     _operationError = "设置未保存";

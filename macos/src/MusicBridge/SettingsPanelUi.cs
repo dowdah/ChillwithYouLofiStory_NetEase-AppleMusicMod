@@ -19,6 +19,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
     private int _page;
     private bool _saving, _closeAfterSave;
     private readonly HashSet<string> _invalidFields = new HashSet<string>();
+    private readonly Dictionary<string, string> _savedStatuses = new Dictionary<string, string>();
     private RectTransform _rect;
     private RectTransform _canvasRect;
     private GameObject _content;
@@ -32,6 +33,9 @@ internal sealed class SettingsPanelUi : MonoBehaviour
     private int _cacheScanGeneration;
     private TextMeshProUGUI _cacheStatus;
     private TextMeshProUGUI _mediaStatus;
+    private float _nextMediaAt;
+    private TextMeshProUGUI _diagnosticsStatus;
+    private float _nextDiagnosticsAt;
     private GameObject _repairConfirmation;
 
     internal static void Open(Transform from, int page = 0)
@@ -133,11 +137,26 @@ internal sealed class SettingsPanelUi : MonoBehaviour
     private void Update()
     {
         Resize();
-        if (_page == 4 && _mediaStatus != null)
+        if (_page == 4 && _mediaStatus != null && Time.unscaledTime >= _nextMediaAt)
         {
+            _nextMediaAt = Time.unscaledTime + 0.2f;
             string status = "实际状态：" + SystemMediaService.StatusText + "；注册命令 " +
-                SystemMediaService.RegisteredTargets + "；" + SystemMediaService.Counters;
+                SystemMediaService.RegisteredTargets + "；桥接 " + SystemMediaService.BridgeVersion +
+                "；当前发布源 " + SystemMediaService.PublishedSource + "；最近错误 " +
+                SystemMediaService.RecentError + "。\n" + SystemMediaService.Counters;
             if (_mediaStatus.text != status) _mediaStatus.text = status;
+        }
+        if (_page == 5 && _diagnosticsStatus != null && Time.unscaledTime >= _nextDiagnosticsAt)
+        {
+            _nextDiagnosticsAt = Time.unscaledTime + 0.2f;
+            var player = AudioPlayer.Instance;
+            string status = "请求音质：" + NeteaseQualityPolicy.Label(MusicBridgeOptions.Current.Netease.PreferredQuality) +
+                "；实际音质/格式：" + (player?.PlaybackSource?.QualityLabel ?? "未知") +
+                "；预下载：" + (player?.PrefetchStatus ?? "未启动") + "。\n" +
+                "缓存扫描：" + (AudioDiskCache.ScanActive ? "进行中" : "空闲") +
+                "；清理：" + (AudioDiskCache.CleanupActive ? "进行中" : "空闲") +
+                "；媒体：" + SystemMediaService.StatusText;
+            if (_diagnosticsStatus.text != status) _diagnosticsStatus.text = status;
         }
         if (Input.GetKeyDown(KeyCode.Escape)) RequestClose();
     }
@@ -152,11 +171,14 @@ internal sealed class SettingsPanelUi : MonoBehaviour
 
     private void ShowPage(int page)
     {
+        if (_page == 2 && page != 2) AudioDiskCache.CancelScan();
         _page = Mathf.Clamp(page, 0, _pages.Length - 1);
         _invalidFields.Clear();
         for (int i = _content.transform.childCount - 1; i >= 0; i--)
             Destroy(_content.transform.GetChild(i).gameObject);
         SectionTitle(_pages[_page]);
+        foreach (var saved in _savedStatuses)
+            if (PageFor(saved.Key) == _page) Note(FieldLabel(saved.Key) + "：" + saved.Value);
         switch (_page)
         {
             case 0:
@@ -201,7 +223,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
                 Toggle("启用macOS系统媒体控制", "SystemMedia.Enabled");
                 _mediaStatus = UiKit.CreateText(_content.transform, "正在读取实际状态…", 12f, TextAnchor.UpperLeft);
                 _mediaStatus.enableWordWrapping = true;
-                _mediaStatus.GetComponent<LayoutElement>().preferredHeight = 50f;
+                _mediaStatus.GetComponent<LayoutElement>().preferredHeight = 80f;
                 UiKit.CreatePillButton(_content.transform, "重试加载桥接", false, UiKit.LineColor, 30f, 150f)
                     .onClick.AddListener(SystemMediaService.Retry);
                 Note("当前原型只代理网易云。Apple Music 的系统会话仍由 Music.app 管理；本地音乐待实机验证。 ");
@@ -209,11 +231,10 @@ internal sealed class SettingsPanelUi : MonoBehaviour
             default:
                 Note("配置来源：" + MusicBridgeOptions.Source);
                 Note("配置版本：" + MusicBridgeOptions.Current.SchemaVersion + "；保存能力：" + (MusicBridgeOptions.CanSave ? "可用" : "已锁定"));
-                var player = AudioPlayer.Instance;
-                Note("请求音质：" + NeteaseQualityPolicy.Label(MusicBridgeOptions.Current.Netease.PreferredQuality) +
-                    "；实际音质/格式：" + (player?.PlaybackSource?.QualityLabel ?? "未知") +
-                    "；预下载：" + (player?.PrefetchStatus ?? "未启动"));
-                Note("媒体桥接：" + SystemMediaService.StatusText + "；" + SystemMediaService.Counters);
+                _diagnosticsStatus = UiKit.CreateText(_content.transform, "正在读取诊断状态…", 12f, TextAnchor.UpperLeft);
+                _diagnosticsStatus.enableWordWrapping = true;
+                _diagnosticsStatus.GetComponent<LayoutElement>().preferredHeight = 62f;
+                Note("媒体命令：" + SystemMediaService.Counters);
                 UiKit.CreatePillButton(_content.transform, "打开配置目录", false, UiKit.LineColor, 30f, 150f)
                     .onClick.AddListener(() => OpenDirectory(BridgePaths.Config));
                 UiKit.CreatePillButton(_content.transform, "打开日志目录", false, UiKit.LineColor, 30f, 150f)
@@ -240,18 +261,56 @@ internal sealed class SettingsPanelUi : MonoBehaviour
         UiKit.CreatePillButton(row.transform, "确认导出脱敏信息", false, UiKit.LineColor, 30f, 174f)
             .onClick.AddListener(() =>
             {
+                var player = AudioPlayer.Instance;
+                var cache = AudioDiskCache.LastUsageSnapshot;
+                var cleanup = AudioDiskCache.LastCleanupResult;
+                var media = SystemMediaService.NativeCounters;
+                string revision = MusicBridgeOptions.Store.Revision;
+                if (revision.Length > 12) revision = revision.Substring(0, 12);
                 var report = new JObject
                 {
                     ["PluginVersion"] = Plugin.PluginVersion,
                     ["SchemaVersion"] = MusicBridgeOptions.Current.SchemaVersion,
                     ["ConfigWritable"] = MusicBridgeOptions.CanSave,
+                    ["settings_revision"] = revision,
+                    ["settings_write_failure"] = MusicBridgeOptions.Store.WriteFailures,
+                    ["settings_conflict"] = MusicBridgeOptions.Store.Conflicts,
+                    ["cache_scan_active"] = AudioDiskCache.ScanActive,
+                    ["cache_cleanup_active"] = AudioDiskCache.CleanupActive,
+                    ["cache_eviction_active"] = AudioDiskCache.EvictionActive,
+                    ["protected_bytes_at_last_scan"] = cache?.ProtectedBytes ?? 0,
+                    ["cleanup_deleted_count"] = cleanup?.Deleted ?? 0,
+                    ["cleanup_skipped_count"] = cleanup?.Skipped ?? 0,
+                    ["cleanup_failed_count"] = cleanup?.Failed ?? 0,
+                    ["queue_epoch"] = player?.QueueEpoch ?? 0,
+                    ["round_id"] = player?.RoundId ?? 0,
+                    ["plan_id"] = player?.PreparedPlanId ?? 0,
+                    ["history_cursor"] = player?.HistoryCursor ?? -1,
+                    ["prefetch_state"] = player?.PrefetchStatus ?? "未启动",
+                    ["prefetch_hit"] = player?.PrefetchHits ?? 0,
+                    ["prefetch_cancel_count"] = player?.PrefetchCancelled ?? 0,
+                    ["prefetch_cancel_reason"] = player?.LastPrefetchCancelReason ?? "无",
                     ["MediaStatus"] = SystemMediaService.StatusText,
+                    ["MediaBridgeVersion"] = SystemMediaService.BridgeVersion,
+                    ["MediaRecentError"] = SystemMediaService.RecentError,
                     ["RegisteredMediaTargets"] = SystemMediaService.RegisteredTargets,
-                    ["MediaCounters"] = SystemMediaService.Counters,
+                    ["media_received"] = media.Received,
+                    ["media_accepted"] = media.Accepted,
+                    ["media_rejected"] = media.Rejected,
+                    ["media_command_queue_depth"] = media.QueueDepth,
+                    ["media_executed"] = SystemMediaService.ExecutedCount,
+                    ["media_stale_dropped"] = SystemMediaService.StaleDroppedCount,
+                    ["media_latency_samples"] = SystemMediaService.LatencySampleCount,
+                    ["media_accepted_p95_ms"] = double.IsNaN(SystemMediaService.AcceptedLatencyP95Ms) ?
+                        JValue.CreateNull() : JToken.FromObject(SystemMediaService.AcceptedLatencyP95Ms),
+                    ["lyrics_request_count"] = LyricsEngine.RequestCount,
+                    ["overlay_instance_count"] = OverlayUi.InstanceCount,
+                    ["subscriber_count"] = BridgePanel.SubscriberCount,
                     ["RequestedQuality"] = NeteaseQualityPolicy.Label(MusicBridgeOptions.Current.Netease.PreferredQuality),
-                    ["ActualQuality"] = AudioPlayer.Instance?.PlaybackSource?.QualityLabel ?? "未知",
-                    ["PrefetchState"] = AudioPlayer.Instance?.PrefetchStatus ?? "未启动"
+                    ["ActualQuality"] = player?.PlaybackSource?.QualityLabel ?? "未知"
                 };
+                report["ErrorCategory"] = player != null && player.State == PlaybackState.Failed ?
+                    "PlaybackFailed" : JValue.CreateNull();
                 string path = BridgePaths.Resolve("logs", "musicbridge-diagnostics-" +
                     DateTime.UtcNow.ToString("yyyyMMddHHmmss") + ".json");
                 _status.text = "正在导出脱敏信息…";
@@ -283,9 +342,10 @@ internal sealed class SettingsPanelUi : MonoBehaviour
                         _status.text = "正在备份并重建配置…";
                         MusicBridgeOptions.Store.RestoreDefaultsAsync(result =>
                         {
+                            bool published = MusicBridgeOptions.PublishIfCurrent(result);
                             if (_instance != this) return;
                             if (!result.Success) { _status.text = result.Error; return; }
-                            MusicBridgeOptions.Publish(result.Options);
+                            if (!published) { _status.text = "配置随后又被更新，请重新打开设置。"; return; }
                             _baseline = MusicBridgeOptions.Store.Capture(result.Options);
                             _working = (JObject)_baseline.Json.DeepClone();
                             ShowPage(_page);
@@ -517,6 +577,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
 
     private void Set(string path, object value)
     {
+        _savedStatuses.Clear();
         var parts = path.Split('.');
         JObject node = _working;
         for (int i = 0; i < parts.Length - 1; i++) node = (JObject)node[parts[i]];
@@ -527,6 +588,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
 
     private void RestorePageDefaults()
     {
+        if (_page == 5) { _status.text = "诊断页没有可恢复的设置。"; return; }
         var defaults = JObject.FromObject(new MusicBridgeOptions());
         string[][] paths = {
             new[] { "Shared.PauseGameMusicUntilUserChooses", "Netease.RepeatQueue", "Netease.NoRepeatShuffle", "Netease.NextAudioPreload" },
@@ -558,15 +620,21 @@ internal sealed class SettingsPanelUi : MonoBehaviour
         UpdateSaveButton();
         MusicBridgeOptions.Store.SavePatchAsync(_baseline, patch, result =>
         {
+            bool published = MusicBridgeOptions.PublishIfCurrent(result);
             if (_instance != this) return;
             _saving = false;
             if (!result.Success)
             { _status.text = result.Error; UpdateSaveButton(); return; }
-            MusicBridgeOptions.Publish(result.Options);
+            if (!published) { _status.text = "设置随后又被更新，请重新打开设置。"; UpdateSaveButton(); return; }
             OverlayUi.ClearPreview();
+            _savedStatuses.Clear();
+            var changed = new List<string>();
+            ChangedPaths(patch, "", changed);
+            foreach (string path in changed)
+                _savedStatuses[path] = SavedStatus(path, result.Options);
             _baseline = MusicBridgeOptions.Store.Capture(result.Options);
             _working = (JObject)_baseline.Json.DeepClone();
-            _status.text = "已保存；播放参数下次切歌生效，显示参数立即生效。";
+            _status.text = "已保存；每项生效状态显示在对应分区顶部。";
             ShowPage(_page);
             if (_closeAfterSave) Close();
         });
@@ -588,6 +656,65 @@ internal sealed class SettingsPanelUi : MonoBehaviour
         return result;
     }
 
+    private static void ChangedPaths(JObject patch, string prefix, List<string> paths)
+    {
+        foreach (var property in patch.Properties())
+        {
+            string path = prefix.Length == 0 ? property.Name : prefix + "." + property.Name;
+            if (property.Value is JObject nested) ChangedPaths(nested, path, paths);
+            else paths.Add(path);
+        }
+    }
+
+    private static int PageFor(string path)
+    {
+        if (path.StartsWith("Overlay.", StringComparison.Ordinal)) return 3;
+        if (path.StartsWith("SystemMedia.", StringComparison.Ordinal)) return 4;
+        if (path.StartsWith("Netease.AudioCache", StringComparison.Ordinal)) return 2;
+        if (path == "Netease.PreferredQuality" || path == "Netease.StreamFlacDuringDownload" ||
+            path == "Netease.AutoRefreshFavorites" || path == "Netease.FavoritesRefreshInterval") return 1;
+        return 0;
+    }
+
+    private static string FieldLabel(string path) => path switch
+    {
+        "Shared.PauseGameMusicUntilUserChooses" => "启动时等待选择音源",
+        "Netease.RepeatQueue" => "队列循环",
+        "Netease.NoRepeatShuffle" => "一轮不重复随机",
+        "Netease.NextAudioPreload" => "下一首预下载",
+        "Netease.PreferredQuality" => "首选音质",
+        "Netease.StreamFlacDuringDownload" => "FLAC边下载边播",
+        "Netease.AutoRefreshFavorites" => "自动刷新喜欢",
+        "Netease.FavoritesRefreshInterval" => "喜欢刷新间隔",
+        "Netease.AudioCacheCapacityBytes" => "缓存容量",
+        "Netease.AudioCacheMaximumFileBytes" => "单文件缓存上限",
+        "Overlay.LyricsVisible" => "歌词窗显示",
+        "Overlay.MiniPlayerVisible" => "迷你条显示",
+        "Overlay.LyricsLocked" => "歌词窗锁定",
+        "Overlay.MiniPlayerLocked" => "迷你条锁定",
+        "Overlay.ShowTranslation" => "显示译文",
+        "Overlay.LyricsFontScale" => "歌词字号",
+        "Overlay.BackgroundOpacity" => "背景不透明度",
+        "Overlay.HideLyricsWhenUnavailable" => "无歌词时隐藏",
+        "SystemMedia.Enabled" => "macOS系统媒体控制",
+        _ => path
+    };
+
+    private static string SavedStatus(string path, MusicBridgeOptions effective)
+    {
+        if (path == "Shared.PauseGameMusicUntilUserChooses") return "已保存；下次启动的音源选择阶段生效";
+        if (path == "Netease.RepeatQueue") return "已保存；下次越过队尾时生效";
+        if (path == "Netease.PreferredQuality" || path == "Netease.StreamFlacDuringDownload")
+            return "已保存；下一首新加载时生效";
+        if (path == "Netease.AudioCacheCapacityBytes") return "已生效；后台整理不删除活动文件";
+        if (path == "Netease.NoRepeatShuffle") return "已生效；不会自动开启随机模式";
+        if (path == "Netease.NextAudioPreload") return "已生效；满足前台让路条件后工作";
+        if (path == "SystemMedia.Enabled" && effective.SystemMedia.Enabled)
+            return SystemMediaService.StatusText.StartsWith("不可用", StringComparison.Ordinal) ?
+                "已保存但桥接不可用；请查看本页实际状态" : "已保存；实际可用性见本页状态";
+        return "已生效";
+    }
+
     private void RequestClose()
     {
         if (_saving) return;
@@ -601,5 +728,10 @@ internal sealed class SettingsPanelUi : MonoBehaviour
     }
 
     private void Close() { OverlayUi.ClearPreview(); Destroy(gameObject); }
-    private void OnDestroy() { OverlayUi.ClearPreview(); if (_instance == this) _instance = null; }
+    private void OnDestroy()
+    {
+        AudioDiskCache.CancelScan();
+        OverlayUi.ClearPreview();
+        if (_instance == this) _instance = null;
+    }
 }

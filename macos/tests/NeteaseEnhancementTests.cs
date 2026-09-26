@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Threading;
 using MusicBridge;
 using Newtonsoft.Json.Linq;
 
@@ -190,6 +191,7 @@ internal static class NeteaseEnhancementTests
         source.SongId = 5; AudioDiskCache.Store(11, source, bytes, () => true);
         Check(File.Exists(pinned), "LRU respects remaining lease after another lease released");
         second.Dispose(); source.SongId = 6; AudioDiskCache.Store(11, source, bytes, () => true);
+        Check(SpinWait.SpinUntil(() => !AudioDiskCache.EvictionActive, 10000), "deferred LRU completes");
         Check(AudioDiskCache.Scan(11).PersistentBytes <= 1 && File.Exists(Path.Combine(root, "1.mp3")),
             "LRU clears indexed audio but preserves unrecognized legacy file");
         MusicBridgeOptions.Current.Netease.AudioCacheCapacityBytes = capacity;

@@ -22,6 +22,7 @@ internal sealed class NeteaseAudioPrefetch : IDisposable
     public readonly int Generation;
     public readonly long PlanId;
     public bool Done => Volatile.Read(ref _done) != 0;
+    public bool Ready { get { lock (_gate) return Done && _file != null && !Cancelled; } }
     public NeteaseAudioPrefetch(long songId, NeteaseQuality quality, NeteaseAccountContext context, int generation, long planId = 0)
     {
         SongId = songId; Quality = quality; Context = context; Generation = generation; PlanId = planId;

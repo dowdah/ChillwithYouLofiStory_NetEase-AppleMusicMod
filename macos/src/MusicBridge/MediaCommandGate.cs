@@ -7,7 +7,7 @@ internal sealed class MediaCommandGate
 
     public bool Accept(NativeMediaCommand command, ulong activeEpoch, ulong currentTrackToken, bool hasTrack)
     {
-        if (!hasTrack || command.Abi != 1 || command.Size != 64 ||
+        if (!hasTrack || command.Abi != 2 || command.Size != 64 ||
             command.Sequence <= _lastSequence || command.OwnerEpoch != activeEpoch ||
             double.IsNaN(command.AgeSeconds) || double.IsInfinity(command.AgeSeconds) ||
             command.AgeSeconds < 0 || command.AgeSeconds > 2 ||

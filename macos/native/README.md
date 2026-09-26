@@ -13,4 +13,4 @@ It accepts native FLAC with known length, mono/stereo, 16/24-bit, 8–192 kHz an
 at most INT32_MAX PCM frames (Unity's clip-length limit). No DRM decoding.
 # macOS system media bridge
 
-`musicbridge_media.mm` and `musicbridge_media.h` implement the process-local public MediaPlayer prototype. Build both arm64 and x86_64 slices with `bash macos/build-media-native.sh`; the script signs only its own output dylib. ABI 1 uses 64-byte snapshot/command structures and borrowed UTF-8 input strings. Native command callbacks enqueue data without calling Unity. This prototype has not yet passed the Steam game-host system UI matrix; see `../MEDIA-CONTROL-POC.md`.
+`musicbridge_media.mm` and `musicbridge_media.h` implement the process-local public MediaPlayer prototype. Build both arm64 and x86_64 slices with `bash macos/build-media-native.sh`; the script signs only its own output dylib. ABI 2 uses 64-byte snapshot/command structures, a 40-byte diagnostics structure, and borrowed UTF-8 input strings. Native command callbacks enqueue data without calling Unity. This prototype has not yet passed the Steam game-host system UI matrix; see `../MEDIA-CONTROL-POC.md`.

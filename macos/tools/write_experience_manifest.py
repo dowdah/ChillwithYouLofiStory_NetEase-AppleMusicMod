@@ -55,7 +55,7 @@ def main():
         "baselineCommit": "3084e9f411d0290dcee43b1961848fcb302c5fb0",
         "pluginVersion": "1.5.0.0-candidate",
         "configSchema": 2,
-        "mediaAbi": 1,
+        "mediaAbi": 2,
         "mediaArchitectures": ["arm64", "x86_64"],
         "nativeCoreCacheDigest": args.native_core_digest,
         "buildHost": {"macOS": platform.mac_ver()[0], "cpu": platform.machine()},

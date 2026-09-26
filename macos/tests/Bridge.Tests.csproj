@@ -8,6 +8,8 @@
     <Compile Include="ShuffleNavigatorTests.cs;../src/MusicBridge/ShuffleNavigator.cs" />
     <Compile Include="SettingsTests.cs;../src/MusicBridge/SettingsStore.cs" />
     <Compile Include="CacheSafetyTests.cs" />
+    <Compile Include="CacheScanBenchmark.cs" />
+    <Compile Include="LyricSnapshotSelectorTests.cs;../src/MusicBridge/LyricLine.cs;../src/MusicBridge/LyricsState.cs;../src/MusicBridge/LyricSnapshot.cs;../src/MusicBridge/LyricSnapshotSelector.cs" />
     <Compile Include="MediaCommandGateTests.cs;../src/MusicBridge/MediaNativeContracts.cs;../src/MusicBridge/MediaCommandGate.cs;../src/MusicBridge/PlaybackState.cs" />
     <Compile Include="../src/MusicBridge/Mac*.cs;../src/MusicBridge/Am*.cs;../src/MusicBridge/AppleMusicCache.cs;../src/MusicBridge/AtomicFile.cs;../src/MusicBridge/BridgePaths.cs;../src/MusicBridge/SmtcSnapshot.cs;../src/MusicBridge/SessionStore.cs;../src/MusicBridge/*Options.cs;../src/MusicBridge/NeteaseApi.cs;../src/MusicBridge/NeteaseCrypto.cs;../src/MusicBridge/NeteaseRequestCancellation.cs;../src/MusicBridge/TrackInfo.cs;../src/MusicBridge/PlaylistInfo.cs;../src/MusicBridge/PlaylistAssembly.cs;../src/MusicBridge/ArtistNameInfo.cs;../src/MusicBridge/AccountInfo.cs;../src/MusicBridge/AccountCheck.cs;../src/MusicBridge/QrStatus.cs;../src/MusicBridge/NeteaseSearchType.cs;../src/MusicBridge/NeteaseSearchStatus.cs" />
   </ItemGroup>

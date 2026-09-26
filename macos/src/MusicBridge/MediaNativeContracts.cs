@@ -22,3 +22,11 @@ internal struct NativeMediaCommand
     public int Type, Reserved;
     public double SeekSeconds, ReceivedMonotonicSeconds, AgeSeconds;
 }
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeMediaDiagnostics
+{
+    public uint Abi, Size;
+    public ulong Received, Accepted, Rejected;
+    public uint QueueDepth, RegisteredTargets;
+}

@@ -29,7 +29,13 @@ internal sealed class SettingsSaveResult
 internal sealed class SettingsStore
 {
     private readonly object _gate = new object();
-    private string _revision = "missing";
+    private volatile string _revision = "missing";
+    private long _writeFailures, _conflicts;
+    internal string Revision => _revision;
+    internal bool IsCurrent(SettingsSaveResult result) => result != null && result.Success &&
+        result.Revision == _revision;
+    internal long WriteFailures => Interlocked.Read(ref _writeFailures);
+    internal long Conflicts => Interlocked.Read(ref _conflicts);
     public string Path { get; }
     public SettingsStore(string path) { Path = BridgePaths.ValidateWritePath(path); }
 
@@ -89,7 +95,11 @@ internal sealed class SettingsStore
                     _revision = RevisionOf(saved);
                     result.Success = true; result.Options = defaults; result.Revision = _revision;
                 }
-                catch (Exception ex) { result.Error = "显式恢复失败，原配置已保留（" + ex.GetType().Name + "）"; }
+                catch (Exception ex)
+                {
+                    Interlocked.Increment(ref _writeFailures);
+                    result.Error = "显式恢复失败，原配置已保留（" + ex.GetType().Name + "）";
+                }
             }
             MainThreadDispatcher.Enqueue(() => completed?.Invoke(result));
         });
@@ -137,6 +147,9 @@ internal sealed class SettingsStore
             }
             catch (Exception ex)
             {
+                if (ex is InvalidDataException && ex.Message.StartsWith("设置冲突：", StringComparison.Ordinal))
+                    Interlocked.Increment(ref _conflicts);
+                else Interlocked.Increment(ref _writeFailures);
                 result.Error = ex is InvalidDataException ? ex.Message : "设置写入失败，原配置已保留（" + ex.GetType().Name + "）";
             }
         }

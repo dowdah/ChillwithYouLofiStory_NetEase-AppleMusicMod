@@ -41,6 +41,8 @@ internal static class SettingsTests
             var merged = store.SavePatch(draft, JObject.Parse("{Netease:{NextAudioPreload:true}}"));
             Check(merged.Success && !merged.Options.Netease.RepeatQueue && merged.Options.Netease.NextAudioPreload,
                 "unrelated external change merges with field patch");
+            Check(!store.IsCurrent(saved) && store.IsCurrent(merged),
+                "late callback from an older settings revision cannot publish over the newer save");
 
             draft = store.Capture(merged.Options);
             external = JObject.Parse(File.ReadAllText(path));

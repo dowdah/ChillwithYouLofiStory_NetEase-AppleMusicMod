@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Globalization;
 using System.Threading;
 using Newtonsoft.Json;
 
@@ -43,20 +44,32 @@ internal static partial class AudioDiskCache
 {
     private static int _managementBusy;
     private static int _managementCancel;
+    private static int _scanGeneration;
+    private static int _scanActive;
+    private static int _evictionRunning, _evictionRequested;
     internal static bool CleanupActive => Volatile.Read(ref _managementBusy) != 0;
+    internal static bool ScanActive => Volatile.Read(ref _scanActive) != 0;
+    internal static bool EvictionActive => Volatile.Read(ref _evictionRunning) != 0 ||
+        Volatile.Read(ref _evictionRequested) != 0;
     internal static void CancelActiveCleanup() { Volatile.Write(ref _managementCancel, 1); }
     internal static CacheCleanupResult LastCleanupResult { get; private set; }
+    internal static CacheUsageSnapshot LastUsageSnapshot { get; private set; }
 
     internal static void ScanAsync(long account, Action<CacheUsageSnapshot> completed)
     {
+        int generation = Interlocked.Increment(ref _scanGeneration);
         ThreadPool.QueueUserWorkItem(_ =>
         {
             CacheUsageSnapshot result;
-            try { result = Scan(account); }
-            catch (Exception ex) { result = new CacheUsageSnapshot { Error = ex.GetType().Name }; }
+            Interlocked.Increment(ref _scanActive);
+            try { result = Scan(account, () => generation != Volatile.Read(ref _scanGeneration)); }
+            catch (Exception ex) { result = new CacheUsageSnapshot { Error = ex is OperationCanceledException ? "扫描已取消" : ex.GetType().Name }; }
+            finally { Interlocked.Decrement(ref _scanActive); }
             MainThreadDispatcher.Enqueue(() => completed?.Invoke(result));
         });
     }
+
+    internal static void CancelScan() { Interlocked.Increment(ref _scanGeneration); }
 
     internal static void PlanAsync(long account, Action<CacheCleanupPlan, string> completed)
     {
@@ -110,7 +123,23 @@ internal static partial class AudioDiskCache
                          name.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)) &&
         name.IndexOf('-') > 0 && name == System.IO.Path.GetFileName(name);
 
-    private static List<CacheCleanupPlan.Item> Indexed(long account, out long residualBytes, out int residualFiles)
+    private static bool OwnedIndex(Entry entry, string index)
+    {
+        if (entry == null || entry.SongId <= 0 || !entry.Trial.HasValue || !entry.Bitrate.HasValue ||
+            string.IsNullOrEmpty(entry.Hash) || entry.Hash.Length != 64 || !KnownAudio(entry.File)) return false;
+        string song = entry.SongId.ToString(CultureInfo.InvariantCulture);
+        string quality = ((int)entry.Requested).ToString(CultureInfo.InvariantCulture);
+        string trial = entry.Trial.Value ? "trial" : "full";
+        string expectedIndex = song + "-" + quality + "-" + trial + ".json";
+        string expectedAudio = song + "-" + trial + "-" + quality + "-" +
+            entry.Bitrate.Value.ToString(CultureInfo.InvariantCulture) + "-" + entry.Hash +
+            (entry.Format == "flac" ? ".flac" : entry.Format == "mp3" ? ".mp3" : "");
+        return string.Equals(System.IO.Path.GetFileName(index), expectedIndex, StringComparison.Ordinal) &&
+            string.Equals(entry.File, expectedAudio, StringComparison.Ordinal);
+    }
+
+    private static List<CacheCleanupPlan.Item> Indexed(long account, out long residualBytes, out int residualFiles,
+        Func<bool> cancelled = null)
     {
         residualBytes = 0; residualFiles = 0;
         string partition = Partition(account);
@@ -119,8 +148,9 @@ internal static partial class AudioDiskCache
         if ((File.GetAttributes(BridgePaths.ValidateWritePath(partition)) & FileAttributes.ReparsePoint) != 0)
             throw new InvalidDataException("缓存分区是链接，已拒绝扫描");
         var files = new HashSet<string>(StringComparer.Ordinal);
-        foreach (string path in Directory.GetFiles(partition, "*", SearchOption.TopDirectoryOnly))
+        foreach (string path in Directory.EnumerateFiles(partition, "*", SearchOption.TopDirectoryOnly))
         {
+            if (cancelled != null && cancelled()) throw new OperationCanceledException();
             bool regular;
             try { regular = RegularFile(path); }
             catch { residualFiles++; continue; }
@@ -130,12 +160,13 @@ internal static partial class AudioDiskCache
         var referenced = new HashSet<string>(StringComparer.Ordinal);
         foreach (string index in files.Where(p => p.EndsWith(".json", StringComparison.OrdinalIgnoreCase)))
         {
+            if (cancelled != null && cancelled()) throw new OperationCanceledException();
             try
             {
                 string text = File.ReadAllText(index);
                 var entry = JsonConvert.DeserializeObject<Entry>(text);
                 if (entry == null || entry.Version != 2 || entry.Account != account ||
-                    !KnownAudio(entry.File)) throw new InvalidDataException();
+                    !OwnedIndex(entry, index)) throw new InvalidDataException();
                 string audio = BridgePaths.ValidateWritePath(System.IO.Path.Combine(partition, entry.File));
                 if (!files.Contains(audio) || !RegularFile(audio)) throw new InvalidDataException();
                 long length = new FileInfo(audio).Length;
@@ -147,20 +178,22 @@ internal static partial class AudioDiskCache
             catch { /* damaged entries remain visible as residuals; never auto-delete */ }
         }
         foreach (string path in files)
+        {
+            if (cancelled != null && cancelled()) throw new OperationCanceledException();
             if (!referenced.Contains(path)) { residualBytes += new FileInfo(path).Length; residualFiles++; }
+        }
         return result;
     }
 
-    internal static CacheUsageSnapshot Scan(long account)
+    internal static CacheUsageSnapshot Scan(long account, Func<bool> cancelled = null)
     {
-        lock (IoGate)
-        {
             var result = new CacheUsageSnapshot();
-            var entries = Indexed(account, out result.ResidualBytes, out result.ResidualFiles);
+            var entries = Indexed(account, out result.ResidualBytes, out result.ResidualFiles, cancelled);
             var seen = new HashSet<string>(StringComparer.Ordinal);
             var counts = entries.GroupBy(e => e.Audio).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
             foreach (var item in entries)
             {
+                if (cancelled != null && cancelled()) throw new OperationCanceledException();
                 result.PersistentBytes += item.IndexBytes;
                 bool first = seen.Add(item.Audio);
                 if (first) result.PersistentBytes += item.AudioBytes;
@@ -172,8 +205,9 @@ internal static partial class AudioDiskCache
             }
             string work = System.IO.Path.Combine(Root, "v2", "work");
             if (Directory.Exists(work) && (File.GetAttributes(BridgePaths.ValidateWritePath(work)) & FileAttributes.ReparsePoint) == 0)
-                foreach (string path in Directory.GetFiles(work, "*", SearchOption.TopDirectoryOnly))
+                foreach (string path in Directory.EnumerateFiles(work, "*", SearchOption.TopDirectoryOnly))
                 {
+                    if (cancelled != null && cancelled()) throw new OperationCanceledException();
                     bool regular;
                     try { regular = RegularFile(path); }
                     catch { result.ResidualFiles++; continue; }
@@ -192,14 +226,12 @@ internal static partial class AudioDiskCache
                     }
                 }
             result.CompletedUtc = DateTime.UtcNow;
+            LastUsageSnapshot = result;
             return result;
-        }
     }
 
     internal static CacheCleanupPlan BuildCleanupPlan(long account)
     {
-        lock (IoGate)
-        {
             var plan = new CacheCleanupPlan { Account = account };
             var entries = Indexed(account, out _, out _);
             var counts = entries.GroupBy(e => e.Audio).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
@@ -207,7 +239,6 @@ internal static partial class AudioDiskCache
                 if (!Pinned(item.Audio) && counts[item.Audio] == 1)
                 { plan.Items.Add(item); plan.EstimatedBytes += item.IndexBytes + item.AudioBytes; }
             return plan;
-        }
     }
 
     private static bool TryWorkId(string path, out string id)
@@ -220,14 +251,12 @@ internal static partial class AudioDiskCache
 
     internal static CacheCleanupPlan BuildStaleWorkPlan()
     {
-        lock (IoGate)
-        {
             var plan = new CacheCleanupPlan { StaleWork = true };
             string work = System.IO.Path.Combine(Root, "v2", "work");
             if (!Directory.Exists(work)) return plan;
             if ((File.GetAttributes(BridgePaths.ValidateWritePath(work)) & FileAttributes.ReparsePoint) != 0)
                 throw new InvalidDataException("活动文件目录是符号链接");
-            foreach (string path in Directory.GetFiles(work, "*.part", SearchOption.TopDirectoryOnly))
+            foreach (string path in Directory.EnumerateFiles(work, "*.part", SearchOption.TopDirectoryOnly))
             {
                 bool regular;
                 try { regular = RegularFile(path); }
@@ -240,18 +269,18 @@ internal static partial class AudioDiskCache
                 plan.EstimatedBytes += bytes;
             }
             return plan;
-        }
     }
 
     internal static CacheCleanupResult ExecuteStaleWork(CacheCleanupPlan plan)
     {
         var result = new CacheCleanupResult { Temporary = true };
-        lock (IoGate)
+        string work = System.IO.Path.Combine(Root, "v2", "work");
+        var touchedSessions = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in plan.WorkItems)
         {
-            string work = System.IO.Path.Combine(Root, "v2", "work");
-            foreach (var item in plan.WorkItems)
+            if (Volatile.Read(ref _managementCancel) != 0) { result.Skipped++; continue; }
+            lock (IoGate)
             {
-                if (Volatile.Read(ref _managementCancel) != 0) { result.Skipped++; continue; }
                 int handle = -1;
                 try
                 {
@@ -260,14 +289,27 @@ internal static partial class AudioDiskCache
                         !TemporarySessionRegistry.TryAcquireInactive(work, item.Item2, out handle))
                     { result.Skipped++; continue; }
                     if (SafeCacheFiles.DeleteRegular(item.Item1))
-                    { result.Deleted++; result.DeletedBytes += item.Item3; }
+                    { result.Deleted++; result.DeletedBytes += item.Item3; touchedSessions.Add(item.Item2); }
                     else result.Skipped++;
-                    if (Directory.GetFiles(work, item.Item2 + "-*.part", SearchOption.TopDirectoryOnly).Length == 0)
-                        SafeCacheFiles.DeleteRegular(System.IO.Path.Combine(work, "session-" + item.Item2 + ".lock"));
                 }
                 catch { result.Failed++; }
                 finally { if (handle >= 0) TemporarySessionRegistry.Close(handle); }
             }
+        }
+        foreach (string session in touchedSessions)
+        {
+            int handle = -1;
+            try
+            {
+                lock (IoGate)
+                {
+                    if (!TemporarySessionRegistry.TryAcquireInactive(work, session, out handle)) continue;
+                    if (!Directory.EnumerateFiles(work, session + "-*.part", SearchOption.TopDirectoryOnly).Any())
+                        SafeCacheFiles.DeleteRegular(System.IO.Path.Combine(work, "session-" + session + ".lock"));
+                }
+            }
+            catch { /* zero-byte marker can be revisited by a later cleanup */ }
+            finally { if (handle >= 0) TemporarySessionRegistry.Close(handle); }
         }
         return result;
     }
@@ -276,30 +318,29 @@ internal static partial class AudioDiskCache
     {
         var result = new CacheCleanupResult();
         if (plan == null) { result.Error = "没有待确认的清理计划"; return result; }
-        lock (IoGate)
+        foreach (var item in plan.Items)
         {
-            var current = Indexed(plan.Account, out _, out _);
-            var counts = current.GroupBy(e => e.Audio).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
-            foreach (var item in plan.Items)
+            if (Volatile.Read(ref _managementCancel) != 0) { result.Skipped += 2; continue; }
+            if (stillCurrent != null && !stillCurrent()) { result.Skipped += 2; continue; }
+            lock (IoGate)
             {
-                if (Volatile.Read(ref _managementCancel) != 0) { result.Skipped += 2; continue; }
-                if (stillCurrent != null && !stillCurrent()) { result.Skipped += 2; continue; }
                 try
                 {
                     if (!RegularFile(item.Index) || !RegularFile(item.Audio) || Pinned(item.Audio) ||
-                        !counts.TryGetValue(item.Audio, out int refs) || refs != 1 ||
                         File.ReadAllText(item.Index) != item.IndexText ||
                         new FileInfo(item.Audio).Length != item.AudioBytes)
                     { result.Skipped += 2; continue; }
                     // IoGate serializes cache publication, lease acquisition and eviction.
-                    SafeCacheFiles.DeleteRegular(item.Audio);
-                    result.Deleted++; result.DeletedBytes += item.AudioBytes;
+                    if (SafeCacheFiles.DeleteRegular(item.Audio))
+                    { result.Deleted++; result.DeletedBytes += item.AudioBytes; }
+                    else result.Skipped++;
                 }
                 catch { result.Failed++; result.Skipped++; continue; }
                 try
                 {
-                    SafeCacheFiles.DeleteRegular(item.Index);
-                    result.Deleted++; result.DeletedBytes += item.IndexBytes;
+                    if (SafeCacheFiles.DeleteRegular(item.Index))
+                    { result.Deleted++; result.DeletedBytes += item.IndexBytes; }
+                    else result.Skipped++;
                 }
                 catch { result.Failed++; }
             }
@@ -309,10 +350,25 @@ internal static partial class AudioDiskCache
 
     internal static void EnforceCapacityAsync()
     {
+        Volatile.Write(ref _evictionRequested, 1);
+        if (Interlocked.CompareExchange(ref _evictionRunning, 1, 0) != 0) return;
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            try { lock (IoGate) Evict(); }
-            catch (Exception ex) { BridgeLog.Warn("音频缓存容量整理未完成（" + ex.GetType().Name + "）。"); }
+            try
+            {
+                do
+                {
+                    Interlocked.Exchange(ref _evictionRequested, 0);
+                    try { EvictSafely(); }
+                    catch (Exception ex) { BridgeLog.Warn("音频缓存容量整理未完成（" + ex.GetType().Name + "）。"); }
+                }
+                while (Volatile.Read(ref _evictionRequested) != 0);
+            }
+            finally
+            {
+                Volatile.Write(ref _evictionRunning, 0);
+                if (Interlocked.Exchange(ref _evictionRequested, 0) != 0) EnforceCapacityAsync();
+            }
         });
     }
 
@@ -335,15 +391,18 @@ internal static partial class AudioDiskCache
         foreach (var item in all.OrderBy(e => File.GetLastAccessTimeUtc(e.Index)))
         {
             if (total <= capacity) break;
-            if (counts[item.Audio] != 1 || Pinned(item.Audio)) continue;
-            try
+            if (counts[item.Audio] != 1) continue;
+            lock (IoGate)
             {
-                if (!RegularFile(item.Index) || !RegularFile(item.Audio) || File.ReadAllText(item.Index) != item.IndexText) continue;
-                SafeCacheFiles.DeleteRegular(item.Index);
-                SafeCacheFiles.DeleteRegular(item.Audio);
-                total -= item.IndexBytes + item.AudioBytes;
+                try
+                {
+                    if (Pinned(item.Audio) || !RegularFile(item.Index) || !RegularFile(item.Audio) ||
+                        File.ReadAllText(item.Index) != item.IndexText) continue;
+                    if (SafeCacheFiles.DeleteRegular(item.Index)) total -= item.IndexBytes;
+                    if (SafeCacheFiles.DeleteRegular(item.Audio)) total -= item.AudioBytes;
+                }
+                catch { BridgeLog.Warn("音频缓存容量整理跳过一个文件。"); }
             }
-            catch { BridgeLog.Warn("音频缓存容量整理跳过一个文件。"); }
         }
     }
 }

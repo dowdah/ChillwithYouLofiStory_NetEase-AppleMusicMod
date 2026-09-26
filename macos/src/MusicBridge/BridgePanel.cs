@@ -133,6 +133,7 @@ internal static class BridgePanel
 	private static int _renderedQrVersion = -1;
 
 	private static bool _subscribed;
+	internal static int SubscriberCount => _subscribed ? (AudioPlayer.Instance != null ? 3 : 2) : 0;
 
 	private static TextMeshProUGUI _collapseLabel;
 

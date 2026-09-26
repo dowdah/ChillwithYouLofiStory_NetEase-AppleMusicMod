@@ -2,7 +2,7 @@
 #define MUSICBRIDGE_MEDIA_H
 #include <stdint.h>
 
-#define MB_MEDIA_ABI 1u
+#define MB_MEDIA_ABI 2u
 #define MB_MEDIA_PLAY 1
 #define MB_MEDIA_PAUSE 2
 #define MB_MEDIA_TOGGLE 3
@@ -38,6 +38,16 @@ typedef struct mb_media_command {
     double age_seconds;
 } mb_media_command;
 
+typedef struct mb_media_diagnostics {
+    uint32_t abi;
+    uint32_t size;
+    uint64_t received;
+    uint64_t accepted;
+    uint64_t rejected;
+    uint32_t queue_depth;
+    uint32_t registered_targets;
+} mb_media_diagnostics;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -47,6 +57,7 @@ MB_MEDIA_EXPORT int32_t mb_media_publish(const mb_media_snapshot *snapshot);
 MB_MEDIA_EXPORT void mb_media_deactivate(uint64_t owner_epoch);
 MB_MEDIA_EXPORT int32_t mb_media_poll(mb_media_command *out_command);
 MB_MEDIA_EXPORT int32_t mb_media_registered_target_count(void);
+MB_MEDIA_EXPORT int32_t mb_media_get_diagnostics(mb_media_diagnostics *out_diagnostics);
 MB_MEDIA_EXPORT void mb_media_shutdown(void);
 #ifdef __cplusplus
 }

@@ -112,6 +112,10 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 	public int QueueIndex => _index;
 
 	public int QueueCount => _queue.Count;
+	internal long QueueEpoch => _shuffleNavigator.QueueEpoch;
+	internal long RoundId => _shuffleNavigator.RoundId;
+	internal long PreparedPlanId => _shuffleNavigator.PreparedPlanId;
+	internal int HistoryCursor => _shuffleNavigator.HistoryCursor;
 	public int PlaybackGeneration => _generation;
 	public long SessionEpoch => _sessionEpoch;
 	public bool DesiredPlaying => State == PlaybackState.Loading ? _playAfterLoad : State == PlaybackState.Playing;
@@ -587,7 +591,11 @@ internal sealed partial class AudioPlayer : MonoBehaviour
                 }
                 AudioDiskCache.Lease cache = null;
                 if (result.Ok && !cancellation.IsCancelled && context.Active && !bypassCache)
-                    cache = _prefetch?.Take(context, result.Value, loadPlanId) ?? AudioDiskCache.TryGet(context.UserId, result.Value);
+                {
+                    cache = _prefetch?.Take(context, result.Value, loadPlanId);
+                    if (cache != null) Interlocked.Increment(ref _prefetchHits);
+                    else cache = AudioDiskCache.TryGet(context.UserId, result.Value);
+                }
                 lock (lookup.Gate)
                 {
                     lookup.Source = result.Value; lookup.Failure = result.Message; lookup.FailureCategory = result.Failure;

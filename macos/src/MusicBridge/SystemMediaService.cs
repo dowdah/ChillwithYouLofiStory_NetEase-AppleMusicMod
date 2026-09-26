@@ -12,10 +12,38 @@ internal static class SystemMediaService
     private static ulong _activeEpoch;
     private static string _lastPublication;
     private static float _lastPublishedAt;
-    private static int _received, _executed, _stale;
+    private static int _executed, _stale;
+    private static readonly double[] CommandLatencyMs = new double[64];
+    private static int _latencyCount, _latencyCursor;
     internal static string StatusText { get; private set; } = "已关闭";
     internal static int RegisteredTargets => Bridge.RegisteredTargets;
-    internal static string Counters => "收到 " + _received + "，执行 " + _executed + "，丢弃过期 " + _stale;
+    internal static string BridgeVersion => Bridge.LoadedAbi == 0 ? "未加载" : "ABI " + Bridge.LoadedAbi;
+    internal static string RecentError => Bridge.Error ?? "无";
+    internal static string PublishedSource => _active ? "网易云" : "无";
+    internal static NativeMediaDiagnostics NativeCounters => Bridge.Diagnostics;
+    internal static int ExecutedCount => _executed;
+    internal static int StaleDroppedCount => _stale;
+    internal static int LatencySampleCount => _latencyCount;
+    internal static double AcceptedLatencyP95Ms => _latencyCount < 30 ? double.NaN : LatencyP95();
+    internal static string Counters
+    {
+        get
+        {
+            NativeMediaDiagnostics native = Bridge.Diagnostics;
+            string latency = _latencyCount < 30 ? "样本不足" : LatencyP95().ToString("0") + " ms";
+            return "原生收到 " + native.Received + "，入队 " + native.Accepted + "，拒绝 " +
+                native.Rejected + "，队列 " + native.QueueDepth + "；主线程执行 " + _executed +
+                "，丢弃 " + _stale + "；命令受理P95 " + latency;
+        }
+    }
+
+    private static double LatencyP95()
+    {
+        double[] samples = new double[_latencyCount];
+        Array.Copy(CommandLatencyMs, samples, _latencyCount);
+        Array.Sort(samples);
+        return samples[(int)Math.Ceiling(samples.Length * 0.95) - 1];
+    }
 
     internal static void Retry()
     {
@@ -75,7 +103,6 @@ internal static class SystemMediaService
         StatusText = Bridge.RegisteredTargets == 6 ? "已启用 · 网易云" : "正在等待系统注册媒体命令";
         for (int i = 0; i < 16 && Bridge.Poll(out var command); i++)
         {
-            _received++;
             PlaybackSnapshot current = PlaybackSnapshotService.Capture();
             if (current.Owner != MusicProvider.Netease || current.OwnerEpoch != (long)command.OwnerEpoch ||
                 string.IsNullOrEmpty(current.TrackKey))
@@ -103,7 +130,14 @@ internal static class SystemMediaService
                     { MusicTransport.SeekNormalized((float)(command.SeekSeconds / current.Duration)); accepted = true; }
                     break;
             }
-            if (accepted) _executed++; else _stale++;
+            if (accepted)
+            {
+                _executed++;
+                CommandLatencyMs[_latencyCursor] = command.AgeSeconds * 1000;
+                _latencyCursor = (_latencyCursor + 1) % CommandLatencyMs.Length;
+                if (_latencyCount < CommandLatencyMs.Length) _latencyCount++;
+            }
+            else _stale++;
         }
     }
 
