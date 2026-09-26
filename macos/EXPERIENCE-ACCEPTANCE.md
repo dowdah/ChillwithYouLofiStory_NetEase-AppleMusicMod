@@ -1,6 +1,6 @@
 # 体验增强候选：集中实机验收单
 
-主候选目录：`macos/dist/ExperienceSourceCandidate`（使用本次从源码重编译的原生运行库）。本轮只验证主候选，不替换现用 `macos/dist/ChillMusicMac`。先前的 `ExperienceCandidate` 使用旧缓存运行库，仅作为对照。反馈时请注明每项 **Pass / Fail / NotRun**，并附发生顺序与截图；候选目录下的日志可供本机后续核对，不需发送 Cookie、Token、钥匙串或整份私人歌单。
+主候选目录：`macos/dist/ExperienceLayoutCandidate`（使用从源码重编译的原生运行库和设置页重排）。`ExperienceSourceCandidate` 的 Steam 启动已由用户完成，但设置页出现页签堆叠、右侧控件裁切；该旧候选保留现场日志，不覆盖。本轮只验证新主候选，不替换现用 `macos/dist/ChillMusicMac`。反馈时请注明每项 **Pass / Fail / NotRun**，并附发生顺序与截图；不需发送 Cookie、Token、钥匙串或整份私人歌单。
 
 ## 启动准备
 
@@ -8,11 +8,19 @@
 2. 临时把该游戏启动选项设为：
 
    ```text
-   "/Users/sheldon/Documents/github_projects/ChillwithYouLofiStory_NetEase-AppleMusicMod/macos/dist/ExperienceSourceCandidate/launch-core.sh" --steam %command%
+   "/Users/sheldon/Documents/github_projects/ChillwithYouLofiStory_NetEase-AppleMusicMod/macos/dist/ExperienceLayoutCandidate/launch-core.sh" --steam %command%
    ```
 
 3. 从 Steam 点击“开始游戏”。在候选的 `logs/launcher-bootstrap.log` 核对选中的架构应为 `arm64`；请勿把沙箱内 `--check` 的自动架构结果当作 Steam 宿主结果。
 4. 游戏正常启动后，在音乐面板顶部确认出现“设置”。若启动异常，恢复原启动选项即可回到原运行目录，并记录失败界面/时间。
+
+## 先复测设置页布局
+
+1. 打开“设置”，确认六个页签排成两行、每个名称完整可读；播放页四个开关都在各自行内，右侧按钮完整可见。旧候选截图中的叠字与半截按钮应消失。
+2. 逐页切换“网易云”“缓存”“悬浮窗”“系统”“诊断”，确认音质选项、数字输入、长状态文字和滚动条可用；向下滚动时“保存”“取消”“恢复本页默认”仍留在底部。
+3. 缩小游戏窗口再重复页签切换与滚动。改动一个设置后点“关闭”，确认“保存并关闭／放弃改动／继续编辑”可见，按 Esc 能返回编辑；取消后不落盘。记录正常与窄窗口截图。
+
+若仍有裁切、遮挡或按钮无法点击，请先标 Fail 并提供窗口大小与截图，再继续其他功能验收。
 
 ## 第一批：设置、缓存、双窗、随机
 
@@ -46,7 +54,7 @@
 2. 正常退出游戏，保存当前 Steam 启动选项和候选测试前的原启动选项；核对候选 `release-manifest.json` 中源码提交、`sourceWorkingTreeDirty=false` 和三个二进制 SHA-256，再从项目根目录执行：
 
    ```sh
-   python3 macos/tools/runtime_update.py apply --stage macos/dist/ExperienceSourceCandidate
+   python3 macos/tools/runtime_update.py apply --stage macos/dist/ExperienceLayoutCandidate
    ```
 
 3. 暂时将 Steam 启动选项指向现用 `macos/dist/ChillMusicMac/launch-core.sh`，从 Steam 进入游戏，使用候选功能并保存一次 V2 设置，记录实际播放与配置状态，然后正常退出。

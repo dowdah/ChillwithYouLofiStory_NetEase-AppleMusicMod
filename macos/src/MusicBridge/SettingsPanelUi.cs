@@ -14,6 +14,8 @@ internal sealed class SettingsPanelUi : MonoBehaviour
 {
     private static SettingsPanelUi _instance;
     private readonly string[] _pages = { "播放", "网易云", "缓存", "歌词与迷你条", "系统控制", "诊断" };
+    private readonly string[] _tabLabels = { "播放", "网易云", "缓存", "悬浮窗", "系统", "诊断" };
+    private readonly Button[] _tabs = new Button[6];
     private SettingsDraft _baseline;
     private JObject _working;
     private int _page;
@@ -23,7 +25,9 @@ internal sealed class SettingsPanelUi : MonoBehaviour
     private RectTransform _rect;
     private RectTransform _canvasRect;
     private GameObject _content;
+    private ScrollRect _scroll;
     private GameObject _confirmRow;
+    private GameObject _footerRow, _defaultsRow;
     private TextMeshProUGUI _status;
     private Button _save;
     private CacheUsageSnapshot _cacheUsage;
@@ -43,6 +47,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
         if (_instance != null)
         {
             _instance.gameObject.SetActive(true);
+            _instance.transform.SetAsLastSibling();
             _instance.ShowPage(page);
             return;
         }
@@ -61,14 +66,15 @@ internal sealed class SettingsPanelUi : MonoBehaviour
         _rect = gameObject.AddComponent<RectTransform>();
         _rect.anchorMin = _rect.anchorMax = new Vector2(0.5f, 0.5f);
         _rect.pivot = new Vector2(0.5f, 0.5f);
+        _rect.anchoredPosition = Vector2.zero;
         Resize();
         Image image = gameObject.AddComponent<Image>();
         image.sprite = UiSprites.Rounded;
         image.type = Image.Type.Sliced;
         image.color = UiKit.DockOpaque;
         var layout = gameObject.AddComponent<VerticalLayoutGroup>();
-        layout.spacing = 7f;
-        layout.padding = new RectOffset(12, 12, 10, 10);
+        layout.spacing = 6f;
+        layout.padding = new RectOffset(14, 14, 10, 10);
         layout.childForceExpandWidth = true;
         layout.childForceExpandHeight = false;
         layout.childControlWidth = true;
@@ -76,20 +82,21 @@ internal sealed class SettingsPanelUi : MonoBehaviour
 
         _baseline = MusicBridgeOptions.Store.Capture(MusicBridgeOptions.Current);
         _working = (JObject)_baseline.Json.DeepClone();
-        var header = UiKit.CreateRow(transform, "SettingsTitle", 32f, 8f);
+        var header = UiKit.CreateRow(transform, "SettingsTitle", 34f, 8f);
         var title = UiKit.CreateText(header.transform, "音乐设置", 18f, TextAnchor.MiddleLeft);
         title.fontStyle = FontStyles.Bold;
-        UiKit.CreateSpacer(header.transform);
-        UiKit.CreatePillButton(header.transform, "关闭", false, UiKit.LineColor, 30f, 72f)
+        FillLabel(title, 26f);
+        SettingsButton(header.transform, "关闭", false, UiKit.LineColor, 32f, 72f)
             .onClick.AddListener(RequestClose);
         for (int row = 0; row < 2; row++)
         {
-            var tabs = UiKit.CreateRow(transform, "SettingsPages" + row, 30f, 5f);
+            var tabs = UiKit.CreateRow(transform, "SettingsPages" + row, 32f, 8f);
             for (int column = 0; column < 3; column++)
             {
                 int index = row * 3 + column;
-                UiKit.CreatePillButton(tabs.transform, _pages[index], false, UiKit.LineColor, 28f)
-                    .onClick.AddListener(() => ShowPage(index));
+                _tabs[index] = SettingsButton(tabs.transform, _tabLabels[index], false, UiKit.LineColor, 32f);
+                FillButton(_tabs[index]);
+                _tabs[index].onClick.AddListener(() => ShowPage(index));
             }
         }
         var viewport = new GameObject("SettingsViewport");
@@ -97,41 +104,169 @@ internal sealed class SettingsPanelUi : MonoBehaviour
         viewport.AddComponent<RectTransform>();
         var viewportLayout = viewport.AddComponent<LayoutElement>();
         viewportLayout.flexibleHeight = 1f;
-        viewportLayout.minHeight = 130f;
+        viewportLayout.minHeight = 60f;
         viewport.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
         viewport.AddComponent<RectMask2D>();
-        var scroll = viewport.AddComponent<ScrollRect>();
-        scroll.horizontal = false;
-        scroll.vertical = true;
-        scroll.movementType = ScrollRect.MovementType.Clamped;
-        scroll.viewport = viewport.GetComponent<RectTransform>();
+        _scroll = viewport.AddComponent<ScrollRect>();
+        _scroll.horizontal = false;
+        _scroll.vertical = true;
+        _scroll.movementType = ScrollRect.MovementType.Clamped;
+        _scroll.viewport = viewport.GetComponent<RectTransform>();
         _content = UiKit.CreateColumn(viewport.transform, "SettingsContent", 8f, new RectOffset(4, 4, 4, 6));
         var contentRect = _content.GetComponent<RectTransform>();
         contentRect.anchorMin = new Vector2(0f, 1f);
         contentRect.anchorMax = new Vector2(1f, 1f);
         contentRect.pivot = new Vector2(0.5f, 1f);
-        scroll.content = contentRect;
+        contentRect.offsetMin = new Vector2(0f, contentRect.offsetMin.y);
+        contentRect.offsetMax = new Vector2(-16f, contentRect.offsetMax.y);
+        _scroll.content = contentRect;
+        AddScrollbar(viewport.transform);
 
         _status = UiKit.CreateText(transform, "更改设置后点保存；当前播放不会中断。", 12f, TextAnchor.MiddleLeft);
         _status.color = UiKit.TextSecondary;
         _status.enableWordWrapping = true;
-        _status.GetComponent<LayoutElement>().preferredHeight = 38f;
-        var footer = UiKit.CreateRow(transform, "SettingsFooter", 34f, 6f);
-        _save = UiKit.CreatePillButton(footer.transform, "保存", true, UiKit.NeteaseAccent, 32f, 82f);
+        _status.GetComponent<LayoutElement>().preferredHeight = 40f;
+        _status.overflowMode = TextOverflowModes.Ellipsis;
+        _footerRow = UiKit.CreateRow(transform, "SettingsFooter", 32f, 8f);
+        _save = SettingsButton(_footerRow.transform, "保存", true, UiKit.NeteaseAccent, 30f);
+        FillButton(_save);
         _save.onClick.AddListener(() => Save(false));
-        UiKit.CreatePillButton(footer.transform, "取消", false, UiKit.LineColor, 32f, 82f)
-            .onClick.AddListener(RequestClose);
-        UiKit.CreatePillButton(footer.transform, "恢复本页默认", false, UiKit.LineColor, 32f, 138f)
+        var cancel = SettingsButton(_footerRow.transform, "取消", false, UiKit.LineColor, 30f);
+        FillButton(cancel);
+        cancel.onClick.AddListener(RequestClose);
+        _defaultsRow = UiKit.CreateRow(transform, "SettingsDefaults", 30f, 0f);
+        var defaultsButton = SettingsButton(_defaultsRow.transform, "恢复本页默认", false, UiKit.LineColor, 28f);
+        FillButton(defaultsButton);
+        defaultsButton
             .onClick.AddListener(RestorePageDefaults);
-        _confirmRow = UiKit.CreateRow(transform, "UnsavedConfirmation", 34f, 6f);
-        UiKit.CreatePillButton(_confirmRow.transform, "保存并关闭", true, UiKit.NeteaseAccent, 32f, 112f)
+        _confirmRow = new GameObject("UnsavedConfirmation");
+        _confirmRow.transform.SetParent(transform, false);
+        _confirmRow.AddComponent<RectTransform>();
+        var confirmSize = _confirmRow.AddComponent<LayoutElement>();
+        confirmSize.minHeight = confirmSize.preferredHeight = 68f;
+        var confirmLayout = _confirmRow.AddComponent<VerticalLayoutGroup>();
+        confirmLayout.spacing = 6f;
+        confirmLayout.childControlWidth = true;
+        confirmLayout.childControlHeight = true;
+        confirmLayout.childForceExpandWidth = true;
+        confirmLayout.childForceExpandHeight = false;
+        var confirmActions = UiKit.CreateRow(_confirmRow.transform, "UnsavedActions", 32f, 8f);
+        var saveClose = SettingsButton(confirmActions.transform, "保存并关闭", true, UiKit.NeteaseAccent, 32f);
+        FillButton(saveClose);
+        saveClose
             .onClick.AddListener(() => Save(true));
-        UiKit.CreatePillButton(_confirmRow.transform, "放弃改动", false, UiKit.LineColor, 32f, 100f)
-            .onClick.AddListener(Close);
-        UiKit.CreatePillButton(_confirmRow.transform, "继续编辑", false, UiKit.LineColor, 32f, 100f)
-            .onClick.AddListener(() => _confirmRow.SetActive(false));
+        var discard = SettingsButton(confirmActions.transform, "放弃改动", false, UiKit.LineColor, 32f);
+        FillButton(discard);
+        discard.onClick.AddListener(Close);
+        var keepEditing = SettingsButton(_confirmRow.transform, "继续编辑", false, UiKit.LineColor, 30f);
+        keepEditing
+            .onClick.AddListener(HideUnsavedConfirmation);
         _confirmRow.SetActive(false);
         ShowPage(page);
+    }
+
+    private static Button SettingsButton(Transform parent, string label, bool filled, Color accent,
+        float height, float width = -1f)
+    {
+        var button = UiKit.CreatePillButton(parent, label, filled, accent, height, width);
+        var text = button.GetComponentInChildren<TextMeshProUGUI>();
+        text.overflowMode = TextOverflowModes.Ellipsis;
+        text.enableAutoSizing = true;
+        text.fontSizeMin = 11f;
+        text.fontSizeMax = UiKit.GameArtistFontSize;
+        return button;
+    }
+
+    private static void FillButton(Button button)
+    {
+        var layout = button.GetComponent<LayoutElement>();
+        layout.minWidth = 0f;
+        layout.preferredWidth = 0f;
+        layout.flexibleWidth = 1f;
+    }
+
+    private static void FillLabel(TextMeshProUGUI text, float height)
+    {
+        var layout = text.GetComponent<LayoutElement>();
+        layout.minWidth = 0f;
+        layout.preferredWidth = 0f;
+        layout.flexibleWidth = 1f;
+        layout.minHeight = height;
+        layout.preferredHeight = height;
+        text.enableWordWrapping = true;
+        text.overflowMode = TextOverflowModes.Ellipsis;
+    }
+
+    private void AddScrollbar(Transform viewport)
+    {
+        var track = UiKit.NewRect("SettingsScrollbar", viewport);
+        track.anchorMin = new Vector2(1f, 0f);
+        track.anchorMax = new Vector2(1f, 1f);
+        track.pivot = new Vector2(1f, 0.5f);
+        track.sizeDelta = new Vector2(6f, -8f);
+        track.anchoredPosition = new Vector2(-4f, 0f);
+        track.gameObject.AddComponent<Image>().color = UiKit.LineSoft;
+        var handle = UiKit.NewRect("Handle", track);
+        handle.anchorMin = Vector2.zero;
+        handle.anchorMax = Vector2.one;
+        handle.offsetMin = Vector2.zero;
+        handle.offsetMax = Vector2.zero;
+        var handleImage = handle.gameObject.AddComponent<Image>();
+        handleImage.color = UiKit.LineColor;
+        var bar = track.gameObject.AddComponent<Scrollbar>();
+        bar.direction = Scrollbar.Direction.BottomToTop;
+        bar.handleRect = handle;
+        bar.targetGraphic = handleImage;
+        _scroll.verticalScrollbar = bar;
+        _scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+    }
+
+    private GameObject FormRow(string name, float height = 48f)
+    {
+        var row = UiKit.CreateRow(_content.transform, name, height, 8f, TextAnchor.MiddleLeft,
+            new RectOffset(12, 12, 0, 0));
+        var background = row.AddComponent<Image>();
+        background.sprite = UiSprites.Rounded;
+        background.type = Image.Type.Sliced;
+        background.color = UiKit.SettingsRowTint;
+        background.raycastTarget = false;
+        return row;
+    }
+
+    private GameObject NumberCard(string name)
+    {
+        var card = new GameObject(name);
+        card.transform.SetParent(_content.transform, false);
+        card.AddComponent<RectTransform>();
+        var size = card.AddComponent<LayoutElement>();
+        size.minHeight = size.preferredHeight = 86f;
+        var background = card.AddComponent<Image>();
+        background.sprite = UiSprites.Rounded;
+        background.type = Image.Type.Sliced;
+        background.color = UiKit.SettingsRowTint;
+        background.raycastTarget = false;
+        var layout = card.AddComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(12, 12, 8, 8);
+        layout.spacing = 6f;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+        return card;
+    }
+
+    private void HighlightCurrentTab()
+    {
+        for (int i = 0; i < _tabs.Length; i++)
+        {
+            if (_tabs[i] == null) continue;
+            bool selected = i == _page;
+            var image = _tabs[i].GetComponent<Image>();
+            image.sprite = selected ? UiSprites.Pill : UiSprites.PillOutline;
+            image.color = selected ? UiKit.NeteaseAccent : UiKit.LineColor;
+            _tabs[i].GetComponentInChildren<TextMeshProUGUI>().color =
+                selected ? UiKit.PillFilledText : Color.white;
+        }
     }
 
     private void Update()
@@ -158,14 +293,18 @@ internal sealed class SettingsPanelUi : MonoBehaviour
                 "；媒体：" + SystemMediaService.StatusText;
             if (_diagnosticsStatus.text != status) _diagnosticsStatus.text = status;
         }
-        if (Input.GetKeyDown(KeyCode.Escape)) RequestClose();
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            if (_confirmRow != null && _confirmRow.activeSelf) HideUnsavedConfirmation();
+            else RequestClose();
+        }
     }
 
     private void Resize()
     {
         if (_rect == null || _canvasRect == null) return;
-        var desired = new Vector2(Mathf.Min(650f, Mathf.Max(300f, _canvasRect.rect.width - 24f)),
-            Mathf.Min(550f, Mathf.Max(270f, _canvasRect.rect.height - 24f)));
+        var desired = new Vector2(Mathf.Min(680f, Mathf.Max(0f, _canvasRect.rect.width - 32f)),
+            Mathf.Min(580f, Mathf.Max(0f, _canvasRect.rect.height - 32f)));
         if ((_rect.sizeDelta - desired).sqrMagnitude > 1f) _rect.sizeDelta = desired;
     }
 
@@ -173,9 +312,14 @@ internal sealed class SettingsPanelUi : MonoBehaviour
     {
         if (_page == 2 && page != 2) AudioDiskCache.CancelScan();
         _page = Mathf.Clamp(page, 0, _pages.Length - 1);
+        HighlightCurrentTab();
         _invalidFields.Clear();
         for (int i = _content.transform.childCount - 1; i >= 0; i--)
-            Destroy(_content.transform.GetChild(i).gameObject);
+        {
+            var old = _content.transform.GetChild(i).gameObject;
+            old.SetActive(false);
+            Destroy(old);
+        }
         SectionTitle(_pages[_page]);
         foreach (var saved in _savedStatuses)
             if (PageFor(saved.Key) == _page) Note(FieldLabel(saved.Key) + "：" + saved.Value);
@@ -222,8 +366,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
             case 4:
                 Toggle("启用macOS系统媒体控制", "SystemMedia.Enabled");
                 _mediaStatus = UiKit.CreateText(_content.transform, "正在读取实际状态…", 12f, TextAnchor.UpperLeft);
-                _mediaStatus.enableWordWrapping = true;
-                _mediaStatus.GetComponent<LayoutElement>().preferredHeight = 80f;
+                WrapBody(_mediaStatus, 80f);
                 UiKit.CreatePillButton(_content.transform, "重试加载桥接", false, UiKit.LineColor, 30f, 150f)
                     .onClick.AddListener(SystemMediaService.Retry);
                 Note("当前原型只代理网易云。Apple Music 的系统会话仍由 Music.app 管理；本地音乐待实机验证。 ");
@@ -232,8 +375,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
                 Note("配置来源：" + MusicBridgeOptions.Source);
                 Note("配置版本：" + MusicBridgeOptions.Current.SchemaVersion + "；保存能力：" + (MusicBridgeOptions.CanSave ? "可用" : "已锁定"));
                 _diagnosticsStatus = UiKit.CreateText(_content.transform, "正在读取诊断状态…", 12f, TextAnchor.UpperLeft);
-                _diagnosticsStatus.enableWordWrapping = true;
-                _diagnosticsStatus.GetComponent<LayoutElement>().preferredHeight = 62f;
+                WrapBody(_diagnosticsStatus, 62f);
                 Note("媒体命令：" + SystemMediaService.Counters);
                 UiKit.CreatePillButton(_content.transform, "打开配置目录", false, UiKit.LineColor, 30f, 150f)
                     .onClick.AddListener(() => OpenDirectory(BridgePaths.Config));
@@ -245,6 +387,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
                 BuildExplicitRepair();
                 break;
         }
+        if (_scroll != null) _scroll.verticalNormalizedPosition = 1f;
         UpdateSaveButton();
     }
 
@@ -361,22 +504,31 @@ internal sealed class SettingsPanelUi : MonoBehaviour
     {
         var title = UiKit.CreateText(_content.transform, value, 16f, TextAnchor.MiddleLeft);
         title.fontStyle = FontStyles.Bold;
+        title.overflowMode = TextOverflowModes.Ellipsis;
     }
 
     private void Note(string value)
     {
         var label = UiKit.CreateText(_content.transform, value, 12f, TextAnchor.UpperLeft);
-        label.enableWordWrapping = true;
         label.color = UiKit.TextSecondary;
-        label.GetComponent<LayoutElement>().preferredHeight = 42f;
+        WrapBody(label, 20f);
+    }
+
+    private static void WrapBody(TextMeshProUGUI label, float minimumHeight)
+    {
+        label.enableWordWrapping = true;
+        label.overflowMode = TextOverflowModes.Truncate;
+        var size = label.GetComponent<LayoutElement>();
+        size.minHeight = minimumHeight;
+        size.preferredHeight = -1f;
     }
 
     private void Toggle(string label, string path)
     {
-        var row = UiKit.CreateRow(_content.transform, path, 34f, 6f);
-        UiKit.CreateText(row.transform, label, 13f, TextAnchor.MiddleLeft);
-        UiKit.CreateSpacer(row.transform);
-        Button button = UiKit.CreatePillButton(row.transform, "", false, UiKit.LineColor, 30f, 70f);
+        var row = FormRow(path);
+        var description = UiKit.CreateText(row.transform, label, 13f, TextAnchor.MiddleLeft);
+        FillLabel(description, 40f);
+        Button button = SettingsButton(row.transform, "", false, UiKit.LineColor, 30f, 72f);
         var text = button.GetComponentInChildren<TextMeshProUGUI>();
         void Refresh() { text.text = _working.SelectToken(path).Value<bool>() ? "开" : "关"; }
         Refresh();
@@ -386,12 +538,13 @@ internal sealed class SettingsPanelUi : MonoBehaviour
     private void Quality()
     {
         Note("首选音质：下一次新加载生效，不中断当前曲目。");
-        var row = UiKit.CreateRow(_content.transform, "QualityOptions", 32f, 4f);
+        var row = UiKit.CreateRow(_content.transform, "QualityOptions", 34f, 6f);
         var values = new[] { NeteaseQuality.Standard, NeteaseQuality.Exhigh, NeteaseQuality.Lossless, NeteaseQuality.HiRes };
         var buttons = new List<Button>();
         foreach (var value in values)
         {
-            var button = UiKit.CreatePillButton(row.transform, NeteaseQualityPolicy.Label(value), false, UiKit.LineColor, 30f);
+            var button = SettingsButton(row.transform, NeteaseQualityPolicy.Label(value), false, UiKit.LineColor, 30f);
+            FillButton(button);
             buttons.Add(button);
             button.onClick.AddListener(() => { Set("Netease.PreferredQuality", (int)value); RefreshQuality(); });
         }
@@ -400,7 +553,13 @@ internal sealed class SettingsPanelUi : MonoBehaviour
             foreach (var button in buttons)
             {
                 var index = buttons.IndexOf(button);
-                button.interactable = _working.SelectToken("Netease.PreferredQuality").Value<int>() != (int)values[index];
+                bool selected = _working.SelectToken("Netease.PreferredQuality").Value<int>() == (int)values[index];
+                var image = button.GetComponent<Image>();
+                image.sprite = selected ? UiSprites.Pill : UiSprites.PillOutline;
+                image.color = selected ? UiKit.NeteaseAccent : UiKit.LineColor;
+                button.GetComponentInChildren<TextMeshProUGUI>().color =
+                    selected ? UiKit.PillFilledText : Color.white;
+                button.interactable = !selected;
             }
         }
         RefreshQuality();
@@ -408,9 +567,13 @@ internal sealed class SettingsPanelUi : MonoBehaviour
 
     private void Number(string label, string path, int min, int max, Func<JToken, int> display, Func<int, JToken> stored)
     {
-        var row = UiKit.CreateRow(_content.transform, path, 34f, 6f);
-        UiKit.CreateText(row.transform, label, 12f, TextAnchor.MiddleLeft);
-        var input = UiKit.CreateSearchInput(row.transform, "输入数值");
+        var card = NumberCard(path);
+        var heading = UiKit.CreateText(card.transform, label, 12f, TextAnchor.MiddleLeft);
+        heading.enableWordWrapping = true;
+        heading.overflowMode = TextOverflowModes.Ellipsis;
+        var headingSize = heading.GetComponent<LayoutElement>();
+        headingSize.minHeight = headingSize.preferredHeight = 34f;
+        var input = UiKit.CreateSearchInput(card.transform, "输入数值");
         input.contentType = TMP_InputField.ContentType.IntegerNumber;
         input.text = display(_working.SelectToken(path)).ToString(CultureInfo.InvariantCulture);
         input.onValueChanged.AddListener(value =>
@@ -427,14 +590,15 @@ internal sealed class SettingsPanelUi : MonoBehaviour
 
     private void Percent(string label, string path, float min, float max)
     {
-        var row = UiKit.CreateRow(_content.transform, path, 34f, 6f);
+        var row = FormRow(path);
         var text = UiKit.CreateText(row.transform, label, 12f, TextAnchor.MiddleLeft);
-        text.GetComponent<LayoutElement>().preferredWidth = 120f;
+        FillLabel(text, 40f);
         var slider = UiKit.CreateBarSlider(row.transform, true);
         slider.minValue = min; slider.maxValue = max;
         slider.SetValueWithoutNotify(_working.SelectToken(path).Value<float>());
         var value = UiKit.CreateText(row.transform, slider.value.ToString("0.00"), 12f, TextAnchor.MiddleRight);
         value.GetComponent<LayoutElement>().preferredWidth = 45f;
+        value.GetComponent<LayoutElement>().minWidth = 45f;
         slider.onValueChanged.AddListener(number => {
             value.text = number.ToString("0.00"); Set(path, number);
             OverlayUi.Preview(_working.SelectToken("Overlay.LyricsFontScale").Value<float>(),
@@ -447,8 +611,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
     private void BuildCacheActions()
     {
         _cacheStatus = UiKit.CreateText(_content.transform, "正在读取当前账号缓存…", 12f, TextAnchor.UpperLeft);
-        _cacheStatus.enableWordWrapping = true;
-        _cacheStatus.GetComponent<LayoutElement>().preferredHeight = 94f;
+        WrapBody(_cacheStatus, 94f);
         var row = UiKit.CreateRow(_content.transform, "CacheActions", 34f, 5f);
         UiKit.CreatePillButton(row.transform, "重新扫描", false, UiKit.LineColor, 30f, 100f)
             .onClick.AddListener(RefreshCache);
@@ -721,10 +884,19 @@ internal sealed class SettingsPanelUi : MonoBehaviour
         if (!JToken.DeepEquals(_working, _baseline.Json))
         {
             _confirmRow.SetActive(true);
+            _footerRow.SetActive(false);
+            _defaultsRow.SetActive(false);
             _status.text = "有未保存的修改。保存并关闭、放弃改动，或继续编辑。";
             return;
         }
         Close();
+    }
+
+    private void HideUnsavedConfirmation()
+    {
+        _confirmRow.SetActive(false);
+        _footerRow.SetActive(true);
+        _defaultsRow.SetActive(true);
     }
 
     private void Close() { OverlayUi.ClearPreview(); Destroy(gameObject); }
