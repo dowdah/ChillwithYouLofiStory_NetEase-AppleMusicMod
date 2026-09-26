@@ -8,6 +8,7 @@
     <NoStdLib>true</NoStdLib>
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
     <LangVersion>12</LangVersion>
+    <Deterministic>true</Deterministic>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GameManagedDir Condition="'$(GameManagedDir)' == ''">$(HOME)/Library/Application Support/Steam/steamapps/common/Chill with You Lo-Fi Story/Chill With You.app/Contents/Resources/Data/Managed</GameManagedDir>
   </PropertyGroup>

@@ -27,7 +27,7 @@
 
 | 候选二进制 | SHA-256 |
 |---|---|
-| `MusicBridge.Plugin.dll` | `d247da5933ff2b62dc83d7c780a980b49ca6b65d35366553ca98d47e3f956d6d` |
+| `MusicBridge.Plugin.dll` | `853347d417d619357066bf68e648bc41fbde837c806e7d3914c668672bd037ed` |
 | `libmusicbridge_flac.dylib` | `4933309a9cf37a8d9c4c3bec373f065040dbf77224c9bfb67844e31fa505e091` |
 | `libmusicbridge_media.dylib` | `7dbf36308926a139ed3b68f2add85b99b34a845f68aec3a80fc543973ca528cb` |
 
@@ -51,6 +51,7 @@
 - `bash macos/build-media-native.sh`：双架构 dylib 构建通过；`nm -gU` 可见 ABI 符号。
 - `python3 -m unittest discover -s macos/tools -p 'test_*.py'`：8 项通过，包含升级工具的配套二进制与 V1 配置回滚模拟。
 - 插件 `netstandard2.1` 托管构建通过，现有警告保留。编译不证明游戏 Mono 兼容、UI 可见、音频出声或媒体系统 UI 生效。
+- 两次独立 `-t:Rebuild` 的托管 DLL SHA-256 相同，均为 `853347d417d619357066bf68e648bc41fbde837c806e7d3914c668672bd037ed`；文件版本与插件声明为 1.5.0.0 候选。
 - `frontend-design-premium` 严格静态审计为 0 项发现，JSON 保存在候选目录 `experience-ui-audit.json`。`DESIGN.md` 的 `npx` lint 因本机缺少已缓存工具且网络不可达未完成；Unity 游戏视图截图仍 NotRun。
 - 完整 `build.sh` 的固定 BepInEx 源码重编译因 NuGet 恢复无网络而停止；隔离候选包通过 `MUSICBRIDGE_NATIVE_CORE_DIGEST=c04d6c416cebe306a1df15f787b13c81c2d848b9774d1ef760c872ff382b7a54` 验证已有本机 `macos/.downloads/native-core` 的全文件摘要后构建。该复用来源与新源码构建不能混称。
 

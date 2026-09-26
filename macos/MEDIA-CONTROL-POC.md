@@ -11,7 +11,7 @@
 - 宿主待测：Steam 版游戏 1.17.3，Unity 2022.3.62f2，macOS 27.0 (26A428)，arm64。本记录尚无该游戏进程内的系统 UI 截图。
 - 原生 SDK：macOS 27.0；脚本 `bash macos/build-media-native.sh` 已在本机成功构建、签名并验证 arm64 与 x86_64 切片。x86_64 只有编译验证，没有 Intel 游戏实测。
 - `nm -gU` 已检查七个 `mb_media_*` 导出符号。`python3 -m unittest discover -s macos/tools -p 'test_*.py'` 包含 ABI、无会话初始化和无效快照拒绝测试。
-- 当前候选媒体 dylib 的 SHA-256 为 `7dbf36308926a139ed3b68f2add85b99b34a845f68aec3a80fc543973ca528cb`；当前托管 DLL 为 `d247da5933ff2b62dc83d7c780a980b49ca6b65d35366553ca98d47e3f956d6d`。这些哈希只证明打包一致，不证明游戏宿主里的系统 UI 生效。
+- 当前候选媒体 dylib 的 SHA-256 为 `7dbf36308926a139ed3b68f2add85b99b34a845f68aec3a80fc543973ca528cb`；当前托管 DLL 为 `853347d417d619357066bf68e648bc41fbde837c806e7d3914c668672bd037ed`。这些哈希只证明打包一致，不证明游戏宿主里的系统 UI 生效。
 - 托管离线测试覆盖两条连续 Next、旧 seek、过期命令、旧 epoch、重复序号和重试序号重置。
 
 ## 游戏宿主验收（全部 NotRun）
