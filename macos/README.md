@@ -170,7 +170,7 @@ bash macos/build-media-native.sh
 (cd macos && dotnet run --project tests -- --music --network --keychain)
 ```
 
-验收通过后，如需把候选安装到现用运行目录，先正常退出游戏，在项目根目录执行 `python3 macos/tools/runtime_update.py apply --stage macos/dist/ExperienceSourceCandidate`。工具先检查候选目录与现用目录不重叠、发布清单为干净源码构建的 ABI 2 候选，且托管 DLL、FLAC 和媒体 dylib 与清单哈希一致；不通过就不备份或替换。通过后才备份旧运行库、插件、启动脚本和主配置，再安装配套文件；不改缓存与游戏本体。
+验收通过后，如需把候选安装到现用运行目录，先正常退出游戏，在项目根目录执行 `python3 macos/tools/runtime_update.py apply --stage macos/dist/ExperienceSourceCandidate`。工具先检查候选目录与现用目录不重叠、发布清单为干净源码构建的 ABI 2 候选，且原生运行库整体摘要及托管 DLL、FLAC、媒体 dylib 哈希与清单一致；不通过就不备份或替换。通过后才备份旧运行库、插件、启动脚本和主配置，再安装配套文件；不改缓存与游戏本体。
 
 撤销最近一次通过升级工具安装的版本：退出游戏后，在项目根目录执行 `python3 macos/tools/runtime_update.py rollback`。它需要已有的本地备份，会把回滚前的 V2 主配置另存到备份目录、恢复原配置，不会删除音乐缓存。若旧版本不支持 Steam 接入，启动旧版前先恢复保存的 Steam 启动选项。V2 新偏好不会自动合并到旧版配置。
 

@@ -34,13 +34,26 @@ class RollbackTests(unittest.TestCase):
                     file = stage / rel
                     file.parent.mkdir(parents=True, exist_ok=True)
                     file.write_bytes(b"new")
-                release = {"sourceWorkingTreeDirty": False, "mediaAbi": 2, "binaries": {}}
+                core_lines = "".join(hashlib.sha256(path.read_bytes()).hexdigest() + "  ./" + path.name + "\n"
+                    for path in sorted(stage_core.iterdir()) if path.is_file())
+                release = {"sourceWorkingTreeDirty": False, "mediaAbi": 2,
+                    "nativeCoreDigest": hashlib.sha256(core_lines.encode()).hexdigest(), "binaries": {}}
                 for key, rel in runtime_update.BINARY_FILES.items():
                     release["binaries"][key] = {"relativePath": rel, "sha256": "0" * 64}
                 (stage / "release-manifest.json").write_text(json.dumps(release))
                 with patch.object(sys, "argv", ["runtime_update.py", "apply", "--stage", str(stage)]), \
                      patch.object(runtime_update.subprocess, "run", return_value=SimpleNamespace(returncode=1)):
                     with self.assertRaisesRegex(RuntimeError, "哈希不符"):
+                        runtime_update.main()
+                self.assertEqual((core / "MonoMod.Core.dll").read_bytes(), b"old")
+                self.assertFalse((project / ".local/runtime-backups").exists())
+                for key, rel in runtime_update.BINARY_FILES.items():
+                    release["binaries"][key]["sha256"] = hashlib.sha256((stage / rel).read_bytes()).hexdigest()
+                release["nativeCoreDigest"] = "0" * 64
+                (stage / "release-manifest.json").write_text(json.dumps(release))
+                with patch.object(sys, "argv", ["runtime_update.py", "apply", "--stage", str(stage)]), \
+                     patch.object(runtime_update.subprocess, "run", return_value=SimpleNamespace(returncode=1)):
+                    with self.assertRaisesRegex(RuntimeError, "运行库摘要不符"):
                         runtime_update.main()
                 self.assertEqual((core / "MonoMod.Core.dll").read_bytes(), b"old")
                 self.assertFalse((project / ".local/runtime-backups").exists())
@@ -113,7 +126,10 @@ class RollbackTests(unittest.TestCase):
                         target = runtime / rel
                         target.parent.mkdir(parents=True, exist_ok=True)
                         target.write_bytes(b"old:" + rel.encode())
-                release = {"sourceWorkingTreeDirty": False, "mediaAbi": 2, "binaries": {}}
+                core_lines = "".join(hashlib.sha256(path.read_bytes()).hexdigest() + "  ./" + path.name + "\n"
+                    for path in sorted((stage / "BepInEx/core").iterdir()) if path.is_file())
+                release = {"sourceWorkingTreeDirty": False, "mediaAbi": 2,
+                    "nativeCoreDigest": hashlib.sha256(core_lines.encode()).hexdigest(), "binaries": {}}
                 for key, rel in runtime_update.BINARY_FILES.items():
                     release["binaries"][key] = {"relativePath": rel,
                         "sha256": hashlib.sha256((stage / rel).read_bytes()).hexdigest()}

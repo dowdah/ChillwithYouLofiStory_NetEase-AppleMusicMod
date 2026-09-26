@@ -36,6 +36,13 @@ def verify_candidate(stage):
         release=json.loads(manifest_path.read_text())
         if release.get('sourceWorkingTreeDirty') is not False or release.get('mediaAbi') != 2:
             raise ValueError('清单不是干净源码构建的 ABI 2 候选')
+        core=stage/'BepInEx/core'
+        if core.is_symlink() or any(path.is_symlink() for path in core.iterdir()):
+            raise ValueError('候选原生运行库含符号链接')
+        core_lines=''.join(hashlib.sha256(path.read_bytes()).hexdigest()+'  ./'+path.name+'\n'
+            for path in sorted(core.iterdir()) if path.is_file())
+        if hashlib.sha256(core_lines.encode('utf-8')).hexdigest() != release['nativeCoreDigest']:
+            raise ValueError('候选原生运行库摘要不符')
         for key, rel in BINARY_FILES.items():
             item=release['binaries'][key]
             expected=item['sha256']

@@ -52,7 +52,7 @@
 - `DOTNET_CLI_HOME=/private/tmp/musicbridge-dotnet dotnet run --project tests/shuffle-core/ShuffleCore.Tests.csproj --no-restore`：通过。
 - `bash macos/build-media-native.sh`：双架构 dylib 构建通过；`nm -gU` 可见 ABI 符号。
 - 可取消缓存扫描的合成 100/1000/10000 文件样本分别约 8/31/337 ms；扫描期间前台临时文件准备不等待整轮 I/O 锁。10000 首随机计划离线推进约 2 ms。这些是本机模拟样本，不替代游戏帧时间或真实缓存规模测量。
-- `python3 -m unittest discover -s macos/tools -p 'test_*.py'`：11 项通过。隔离目录下使用显式 `--stage` 候选路径完成文件清单升级→V2 配置写入→回滚演练：旧版运行库、插件、脚本、文档和 V1 配置恢复，V2 配置另存，缓存保留；模拟部署中断后旧运行目录恢复，原有回滚目标不被覆盖。显式候选包若与现用目录重叠、缺少干净源码/ABI 2 清单或三个核心二进制哈希不符，会在备份和替换前拒绝。升级清单已纳入 `EXPERIENCE-ACCEPTANCE.md`。此演练没有启动游戏，不计入真实回滚验收。
+- `python3 -m unittest discover -s macos/tools -p 'test_*.py'`：11 项通过。隔离目录下使用显式 `--stage` 候选路径完成文件清单升级→V2 配置写入→回滚演练：旧版运行库、插件、脚本、文档和 V1 配置恢复，V2 配置另存，缓存保留；模拟部署中断后旧运行目录恢复，原有回滚目标不被覆盖。显式候选包若与现用目录重叠、缺少干净源码/ABI 2 清单、原生运行库整体摘要或三个核心二进制哈希不符，会在备份和替换前拒绝。升级清单已纳入 `EXPERIENCE-ACCEPTANCE.md`。此演练没有启动游戏，不计入真实回滚验收。
 - 插件 `netstandard2.1` 托管构建通过，现有警告保留。编译不证明游戏 Mono 兼容、UI 可见、音频出声或媒体系统 UI 生效。
 - 确定性构建开关设置后，同一源码提交下两次独立 `-t:Rebuild` 的托管 DLL 哈希一致。源码提交变化会改变构建输入；最终候选 DLL 哈希只在构建后清单中固定。文件版本与插件声明为 1.5.0.0 候选。
 - `frontend-design-premium` 严格静态审计为 0 项发现，JSON 保存在候选目录 `experience-ui-audit.json`。`DESIGN.md` 的 `npx` lint 因本机缺少已缓存工具且网络不可达未完成；Unity 游戏视图截图仍 NotRun。
