@@ -18,7 +18,7 @@ FILES = LEGACY_FILES + ['BepInEx/plugins/ChillWithYouMusicBridge/music.js',
     'BepInEx/plugins/ChillWithYouMusicBridge/LICENSE.dr_libs',
     'BepInEx/LICENSE.native-MIT', 'BepInEx/LICENSE.harmony-MIT', '使用说明.md',
     'NATIVE-RUNTIME.md', 'TEST-REPORT.md', 'THIRD-PARTY-NOTICES.md',
-    'EXPERIENCE-ENHANCEMENTS.md', 'MEDIA-CONTROL-POC.md']
+    'EXPERIENCE-ENHANCEMENTS.md', 'EXPERIENCE-ACCEPTANCE.md', 'MEDIA-CONTROL-POC.md']
 CONFIG_REL = 'BepInEx/plugins/ChillWithYouMusicBridge/config/musicbridge.options.json'
 
 def main():
@@ -30,7 +30,7 @@ def main():
     if args.action=='apply':
         for rel in ['BepInEx/core/MonoMod.Core.dll',*FILES]:
             if not (STAGE/rel).is_file():raise RuntimeError('缺少准备好的构建产物：'+rel)
-        backup=root/time.strftime('%Y%m%d-%H%M%S');backup.mkdir()
+        backup=root/(time.strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex);backup.mkdir()
         shutil.copytree(RUNTIME/'BepInEx/core',backup/'core')
         absent=[]
         for rel in FILES:
@@ -42,11 +42,16 @@ def main():
             target=backup/CONFIG_REL;target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(RUNTIME/CONFIG_REL,target)
         record={'backup':str(backup),'absent':absent,'files':FILES,'config_present':config_present}
-        manifest.write_text(json.dumps(record,indent=2))
         try:
             shutil.rmtree(RUNTIME/'BepInEx/core')
             shutil.copytree(STAGE/'BepInEx/core',RUNTIME/'BepInEx/core')
             for rel in FILES:shutil.copy2(STAGE/rel,RUNTIME/rel)
+            pending_manifest=root/('latest-'+uuid.uuid4().hex+'.json')
+            try:
+                pending_manifest.write_text(json.dumps(record,indent=2))
+                pending_manifest.replace(manifest)
+            finally:
+                pending_manifest.unlink(missing_ok=True)
         except Exception:
             restore(record);raise
         print('已安装原生运行库与优化版插件；配置、曲库缓存和游戏文件保持不变。')
