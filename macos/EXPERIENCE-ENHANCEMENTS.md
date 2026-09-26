@@ -23,15 +23,17 @@
 
 ## 隔离候选产物
 
-`macos/dist/ExperienceCandidate` 由本分支源码构建，不覆盖现用 `ChillMusicMac`。构建时复用全文件摘要 `c04d6c416cebe306a1df15f787b13c81c2d848b9774d1ef760c872ff382b7a54` 的本机原生运行库缓存；完整重编译曾在 NuGet 恢复阶段因网络不可达停止。候选媒体 dylib 已用 `file` 与 `lipo -verify_arch` 验证 arm64/x86_64，包内没有 `config/cache/logs`。
+主验收候选为 `macos/dist/ExperienceSourceCandidate`，不覆盖现用 `ChillMusicMac`。其 BepInEx 运行库由固定的本地源码树在独立临时目录重编译，25 个文件的全量摘要为 `9d5743f020979d255275bc5728bbc8603e6f62a6cfb15f42e3b1ecc94b73cd1b`，随后按摘要打入主候选。此前复用缓存运行库的 `ExperienceCandidate`（摘要 `c04d6c416cebe306a1df15f787b13c81c2d848b9774d1ef760c872ff382b7a54`）保留作对照，不作为主验收产物。媒体 dylib 已用 `file` 与 `lipo -verify_arch` 验证 arm64/x86_64；主候选包内没有 `config/cache/logs`。
+
+重编译目录与旧缓存均有 25 个文件，但其中 5 个 DLL 的字节哈希不同。尚未把这种差异解释为仅有构建元数据变化，主候选需要自己的游戏进程验收；旧运行库的历史证据不能代替它。
 
 | 候选二进制 | SHA-256 |
 |---|---|
-| `MusicBridge.Plugin.dll` | 以候选目录 `release-manifest.json` 的 `managedDll.sha256` 为准；它在最终源码提交后生成 |
+| `MusicBridge.Plugin.dll` | 以主候选 `release-manifest.json` 的 `managedDll.sha256` 为准；它在最终源码提交后生成 |
 | `libmusicbridge_flac.dylib` | `4933309a9cf37a8d9c4c3bec373f065040dbf77224c9bfb67844e31fa505e091` |
-| `libmusicbridge_media.dylib` | 以候选目录 `release-manifest.json` 的 `mediaDylib.sha256` 为准 |
+| `libmusicbridge_media.dylib` | 以主候选 `release-manifest.json` 的 `mediaDylib.sha256` 为准 |
 
-候选目录的 `release-manifest.json` 绑定源码提交、二进制哈希、配置 schema 和未执行门槛；游戏验收或后续源码修改后必须重新构建并更新清单。
+主候选目录的 `release-manifest.json` 绑定源码提交、二进制哈希、配置 schema、原生运行库来源和未执行门槛；游戏验收或后续源码修改后必须重新构建并更新清单。
 
 ## 实现和验证状态
 
@@ -54,7 +56,7 @@
 - 插件 `netstandard2.1` 托管构建通过，现有警告保留。编译不证明游戏 Mono 兼容、UI 可见、音频出声或媒体系统 UI 生效。
 - 确定性构建开关设置后，同一源码提交下两次独立 `-t:Rebuild` 的托管 DLL 哈希一致。源码提交变化会改变构建输入；最终候选 DLL 哈希只在构建后清单中固定。文件版本与插件声明为 1.5.0.0 候选。
 - `frontend-design-premium` 严格静态审计为 0 项发现，JSON 保存在候选目录 `experience-ui-audit.json`。`DESIGN.md` 的 `npx` lint 因本机缺少已缓存工具且网络不可达未完成；Unity 游戏视图截图仍 NotRun。
-- 完整 `build.sh` 的固定 BepInEx 源码重编译因 NuGet 恢复无网络而停止；隔离候选包通过 `MUSICBRIDGE_NATIVE_CORE_DIGEST=c04d6c416cebe306a1df15f787b13c81c2d848b9774d1ef760c872ff382b7a54` 验证已有本机 `macos/.downloads/native-core` 的全文件摘要后构建。该复用来源与新源码构建不能混称。
+- 沙箱内完整 `build.sh` 曾在 NuGet 恢复处停住；两次沙箱内 `--no-restore` 也未进入编译目标。随后在获准的本机执行环境，以已缓存包执行 `dotnet publish .../BepInEx.Preloader.csproj -c Release -o /private/tmp/musicbridge-native-rebuilt --no-restore -p:NuGetAudit=false -m:1 -nr:false`，源码构建成功（1 项 XML 注释警告），25 文件摘要 `9d5743f020979d255275bc5728bbc8603e6f62a6cfb15f42e3b1ecc94b73cd1b`。主候选使用该重编译目录打包；旧缓存候选单独保留。源码构建成功仍不等于游戏宿主兼容通过。
 
 ## 发布门槛
 

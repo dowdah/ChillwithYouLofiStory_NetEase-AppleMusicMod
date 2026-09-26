@@ -42,6 +42,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--native-core-digest", required=True)
+    parser.add_argument("--native-core-provenance", choices=("cached", "source-rebuild"), default="cached")
     args = parser.parse_args()
     candidate = args.candidate.resolve()
     binaries = {}
@@ -76,7 +77,8 @@ def main():
         "configSchema": config_schema,
         "mediaAbi": media_abi,
         "mediaArchitectures": ["arm64", "x86_64"],
-        "nativeCoreCacheDigest": args.native_core_digest,
+        "nativeCoreDigest": args.native_core_digest,
+        "nativeCoreProvenance": args.native_core_provenance,
         "buildHost": {"macOS": platform.mac_ver()[0], "cpu": platform.machine()},
         "binaries": binaries,
         "gameHostAcceptance": "NotRun",

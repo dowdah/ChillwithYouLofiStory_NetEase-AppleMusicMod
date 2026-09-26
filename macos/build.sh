@@ -28,7 +28,7 @@ if [[ -n "${MUSICBRIDGE_NATIVE_CORE_DIGEST:-}" ]]; then
     [[ -z "$(find "$NATIVE_CORE_DIR" -maxdepth 1 -type l -print -quit)" ]] || { echo '原生运行库缓存含符号链接，停止。' >&2; exit 1; }
     ACTUAL_CORE_DIGEST=$(cd "$NATIVE_CORE_DIR" && find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | awk '{print $1}')
     [[ "$ACTUAL_CORE_DIGEST" == "$MUSICBRIDGE_NATIVE_CORE_DIGEST" ]] || { echo '原生运行库缓存摘要不匹配，停止。' >&2; exit 1; }
-    echo "复用已验摘要的原生运行库缓存：$ACTUAL_CORE_DIGEST"
+    echo "使用独立提供且已验摘要的原生运行库目录：$ACTUAL_CORE_DIGEST"
 else
     "$MOD_SOURCE/build-native-runtime.sh"
 fi

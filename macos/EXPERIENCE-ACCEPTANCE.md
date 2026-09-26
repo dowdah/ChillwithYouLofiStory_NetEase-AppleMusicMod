@@ -1,6 +1,6 @@
 # 体验增强候选：集中实机验收单
 
-候选目录：`macos/dist/ExperienceCandidate`。本轮只验证候选，不替换现用 `macos/dist/ChillMusicMac`。反馈时请注明每项 **Pass / Fail / NotRun**，并附发生顺序与截图；候选目录下的日志可供本机后续核对，不需发送 Cookie、Token、钥匙串或整份私人歌单。
+主候选目录：`macos/dist/ExperienceSourceCandidate`（使用本次从源码重编译的原生运行库）。本轮只验证主候选，不替换现用 `macos/dist/ChillMusicMac`。先前的 `ExperienceCandidate` 使用旧缓存运行库，仅作为对照。反馈时请注明每项 **Pass / Fail / NotRun**，并附发生顺序与截图；候选目录下的日志可供本机后续核对，不需发送 Cookie、Token、钥匙串或整份私人歌单。
 
 ## 启动准备
 
@@ -8,7 +8,7 @@
 2. 临时把该游戏启动选项设为：
 
    ```text
-   "/Users/sheldon/Documents/github_projects/ChillwithYouLofiStory_NetEase-AppleMusicMod/macos/dist/ExperienceCandidate/launch-core.sh" --steam %command%
+   "/Users/sheldon/Documents/github_projects/ChillwithYouLofiStory_NetEase-AppleMusicMod/macos/dist/ExperienceSourceCandidate/launch-core.sh" --steam %command%
    ```
 
 3. 从 Steam 点击“开始游戏”。在候选的 `logs/launcher-bootstrap.log` 核对选中的架构应为 `arm64`；请勿把沙箱内 `--check` 的自动架构结果当作 Steam 宿主结果。
