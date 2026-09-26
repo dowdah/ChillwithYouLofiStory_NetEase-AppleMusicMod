@@ -38,7 +38,7 @@ class RollbackTests(unittest.TestCase):
                 copy2 = runtime_update.shutil.copy2
 
                 def fail_new_plugin(source, destination, *args, **kwargs):
-                    if Path(source) == stage / runtime_update.FILES[0]:
+                    if Path(source).resolve() == (stage / runtime_update.FILES[0]).resolve():
                         raise OSError("simulated interrupted deployment")
                     return copy2(source, destination, *args, **kwargs)
 
@@ -62,7 +62,8 @@ class RollbackTests(unittest.TestCase):
             project = Path(directory)
             runtime = project / "runtime"
             stage = project / ".local/native-staging"
-            runtime_update.PROJECT, runtime_update.RUNTIME, runtime_update.STAGE = project, runtime, stage
+            runtime_update.PROJECT, runtime_update.RUNTIME, runtime_update.STAGE = (
+                project, runtime, project / "unused-default-stage")
             try:
                 (runtime / "BepInEx/core").mkdir(parents=True)
                 (stage / "BepInEx/core").mkdir(parents=True)
@@ -84,7 +85,7 @@ class RollbackTests(unittest.TestCase):
                 cache = runtime / "BepInEx/plugins/ChillWithYouMusicBridge/cache/keep.bin"
                 cache.parent.mkdir(parents=True, exist_ok=True)
                 cache.write_bytes(b"keep-cache")
-                with patch.object(sys, "argv", ["runtime_update.py", "apply"]), \
+                with patch.object(sys, "argv", ["runtime_update.py", "apply", "--stage", str(stage)]), \
                      patch.object(runtime_update.subprocess, "run", return_value=SimpleNamespace(returncode=1)):
                     runtime_update.main()
                 self.assertEqual((runtime / "BepInEx/core/BepInEx.dll").read_bytes(), b"new-core")

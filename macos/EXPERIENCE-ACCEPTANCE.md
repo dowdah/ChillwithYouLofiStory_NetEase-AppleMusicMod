@@ -40,6 +40,20 @@
 
 以上核心场景尚未在游戏进程执行，任何一项失败都应标 Fail 并保留复现步骤。Intel、耳机按钮、睡眠唤醒、60 分钟长稳和真实升级→回滚→旧版启动，待核心问题修正后在**最终同哈希产物**上单独验收。
 
+## 最终批次：长稳与真实回滚（核心场景通过后）
+
+1. 在最终同哈希候选上连续实际播放至少 60 分钟，期间使用随机、预下载、双窗及系统命令；每 30 秒记录资源样本，保存起止时间、版本清单和任何异常。若源码或二进制后来改变，重做受影响的验收。
+2. 正常退出游戏，保存当前 Steam 启动选项和候选测试前的原启动选项；核对候选 `release-manifest.json` 中源码提交、`sourceWorkingTreeDirty=false` 和三个二进制 SHA-256，再从项目根目录执行：
+
+   ```sh
+   python3 macos/tools/runtime_update.py apply --stage macos/dist/ExperienceSourceCandidate
+   ```
+
+3. 暂时将 Steam 启动选项指向现用 `macos/dist/ChillMusicMac/launch-core.sh`，从 Steam 进入游戏，使用候选功能并保存一次 V2 设置，记录实际播放与配置状态，然后正常退出。
+4. 从项目根目录执行 `python3 macos/tools/runtime_update.py rollback`；保持 Steam 指向 `ChillMusicMac`，从 Steam 启动回滚后的旧版。检查旧插件可读原 V1 配置、缓存与登录仍在、游戏音乐正常。记录升级备份路径与回滚前 V2 配置的另存路径；不要把 V2 直接交给只接受 V1 的旧插件。验证完毕后，再按用户需要恢复候选测试前的原启动选项。
+
+上述流程尚未执行，不能用隔离目录的脚本单测代替真实升级、使用及旧版启动证据。
+
 ## 收尾
 
 恢复准备步骤保存的 Steam 启动选项。候选目录自身的 `config/cache/logs` 可以保留作本次证据；不要手动清理现用运行目录、钥匙串或游戏存档。

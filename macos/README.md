@@ -170,7 +170,9 @@ bash macos/build-media-native.sh
 (cd macos && dotnet run --project tests -- --music --network --keychain)
 ```
 
-撤销最近一次通过升级工具安装的版本：退出游戏后，在项目根目录执行 `python3 macos/tools/runtime_update.py rollback`。它需要已有的本地备份，不会删除音乐缓存；如果要回到不支持 Steam 接入的旧版本，请先恢复 Steam 启动选项。
+验收通过后，如需把候选安装到现用运行目录，先正常退出游戏，在项目根目录执行 `python3 macos/tools/runtime_update.py apply --stage macos/dist/ExperienceSourceCandidate`。工具先备份旧运行库、插件、启动脚本和主配置，再安装配套文件；不改缓存与游戏本体。安装前先核对候选目录的 `release-manifest.json` 与将要验收的哈希。
+
+撤销最近一次通过升级工具安装的版本：退出游戏后，在项目根目录执行 `python3 macos/tools/runtime_update.py rollback`。它需要已有的本地备份，会把回滚前的 V2 主配置另存到备份目录、恢复原配置，不会删除音乐缓存。若旧版本不支持 Steam 接入，启动旧版前先恢复保存的 Steam 启动选项。V2 新偏好不会自动合并到旧版配置。
 
 测试结果见 [测试记录](TEST-REPORT.md)，运行库来源、构建修改和许可见 [原生运行库说明](NATIVE-RUNTIME.md)。当前 ARM 兼容运行库来自社区分支，不代表 BepInEx 官方稳定版支持承诺。
 

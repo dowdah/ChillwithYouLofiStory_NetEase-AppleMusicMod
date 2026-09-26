@@ -22,14 +22,17 @@ FILES = LEGACY_FILES + ['BepInEx/plugins/ChillWithYouMusicBridge/music.js',
 CONFIG_REL = 'BepInEx/plugins/ChillWithYouMusicBridge/config/musicbridge.options.json'
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['apply','rollback']);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['apply','rollback'])
+    p.add_argument('--stage',type=Path,default=STAGE,help='apply 时使用的完整候选包目录')
+    args=p.parse_args()
     if subprocess.run(['/usr/bin/pgrep','-x','Chill With You'],stdout=subprocess.DEVNULL).returncode==0:
         raise RuntimeError('请先正常退出游戏，不能替换正在加载的运行库。')
     root=PROJECT/'.local/runtime-backups';root.mkdir(parents=True,exist_ok=True)
     manifest=root/'latest.json'
     if args.action=='apply':
+        stage=args.stage.resolve()
         for rel in ['BepInEx/core/MonoMod.Core.dll',*FILES]:
-            if not (STAGE/rel).is_file():raise RuntimeError('缺少准备好的构建产物：'+rel)
+            if not (stage/rel).is_file():raise RuntimeError('缺少准备好的构建产物：'+rel)
         backup=root/(time.strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex);backup.mkdir()
         shutil.copytree(RUNTIME/'BepInEx/core',backup/'core')
         absent=[]
@@ -44,8 +47,8 @@ def main():
         record={'backup':str(backup),'absent':absent,'files':FILES,'config_present':config_present}
         try:
             shutil.rmtree(RUNTIME/'BepInEx/core')
-            shutil.copytree(STAGE/'BepInEx/core',RUNTIME/'BepInEx/core')
-            for rel in FILES:shutil.copy2(STAGE/rel,RUNTIME/rel)
+            shutil.copytree(stage/'BepInEx/core',RUNTIME/'BepInEx/core')
+            for rel in FILES:shutil.copy2(stage/rel,RUNTIME/rel)
             pending_manifest=root/('latest-'+uuid.uuid4().hex+'.json')
             try:
                 pending_manifest.write_text(json.dumps(record,indent=2))
