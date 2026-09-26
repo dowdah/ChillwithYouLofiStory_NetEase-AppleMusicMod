@@ -27,7 +27,7 @@
 
 | 候选二进制 | SHA-256 |
 |---|---|
-| `MusicBridge.Plugin.dll` | `c3a817dde60c41f8ca2112229a654ee6d466913afb85a628f5785909e8420b4f` |
+| `MusicBridge.Plugin.dll` | 以候选目录 `release-manifest.json` 的 `managedDll.sha256` 为准；它在最终源码提交后生成 |
 | `libmusicbridge_flac.dylib` | `4933309a9cf37a8d9c4c3bec373f065040dbf77224c9bfb67844e31fa505e091` |
 | `libmusicbridge_media.dylib` | `34a05144132d867278279cfb9ddc08a002185901949163d31ccb9536201712dd` |
 
@@ -52,7 +52,7 @@
 - 可取消缓存扫描的合成 100/1000/10000 文件样本分别约 8/31/337 ms；扫描期间前台临时文件准备不等待整轮 I/O 锁。10000 首随机计划离线推进约 2 ms。这些是本机模拟样本，不替代游戏帧时间或真实缓存规模测量。
 - `python3 -m unittest discover -s macos/tools -p 'test_*.py'`：8 项通过，包含升级工具的配套二进制与 V1 配置回滚模拟。
 - 插件 `netstandard2.1` 托管构建通过，现有警告保留。编译不证明游戏 Mono 兼容、UI 可见、音频出声或媒体系统 UI 生效。
-- 确定性构建开关设置后，两次独立 `-t:Rebuild` 的托管 DLL 哈希一致；本次代码变更后候选 DLL 为上表 `c3a817dd…`。文件版本与插件声明为 1.5.0.0 候选。
+- 确定性构建开关设置后，同一源码提交下两次独立 `-t:Rebuild` 的托管 DLL 哈希一致。源码提交变化会改变构建输入；最终候选 DLL 哈希只在构建后清单中固定。文件版本与插件声明为 1.5.0.0 候选。
 - `frontend-design-premium` 严格静态审计为 0 项发现，JSON 保存在候选目录 `experience-ui-audit.json`。`DESIGN.md` 的 `npx` lint 因本机缺少已缓存工具且网络不可达未完成；Unity 游戏视图截图仍 NotRun。
 - 完整 `build.sh` 的固定 BepInEx 源码重编译因 NuGet 恢复无网络而停止；隔离候选包通过 `MUSICBRIDGE_NATIVE_CORE_DIGEST=c04d6c416cebe306a1df15f787b13c81c2d848b9774d1ef760c872ff382b7a54` 验证已有本机 `macos/.downloads/native-core` 的全文件摘要后构建。该复用来源与新源码构建不能混称。
 
