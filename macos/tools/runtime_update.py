@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Apply the staged runtime without touching plugin config, caches, or game files."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -20,19 +21,50 @@ FILES = LEGACY_FILES + ['BepInEx/plugins/ChillWithYouMusicBridge/music.js',
     'NATIVE-RUNTIME.md', 'TEST-REPORT.md', 'THIRD-PARTY-NOTICES.md',
     'EXPERIENCE-ENHANCEMENTS.md', 'EXPERIENCE-ACCEPTANCE.md', 'MEDIA-CONTROL-POC.md']
 CONFIG_REL = 'BepInEx/plugins/ChillWithYouMusicBridge/config/musicbridge.options.json'
+BINARY_FILES = {
+    'managedDll': FILES[0],
+    'audioDylib': 'BepInEx/plugins/ChillWithYouMusicBridge/libmusicbridge_flac.dylib',
+    'mediaDylib': 'BepInEx/plugins/ChillWithYouMusicBridge/libmusicbridge_media.dylib',
+}
+
+def verify_candidate(stage):
+    runtime=RUNTIME.resolve()
+    if stage == runtime or stage in runtime.parents or runtime in stage.parents:
+        raise RuntimeError('候选目录与现用运行目录重叠，拒绝安装。')
+    manifest_path=stage/'release-manifest.json'
+    try:
+        release=json.loads(manifest_path.read_text())
+        if release.get('sourceWorkingTreeDirty') is not False or release.get('mediaAbi') != 2:
+            raise ValueError('清单不是干净源码构建的 ABI 2 候选')
+        for key, rel in BINARY_FILES.items():
+            item=release['binaries'][key]
+            expected=item['sha256']
+            if item['relativePath'] != rel or not isinstance(expected,str) or len(expected) != 64:
+                raise ValueError('清单文件路径或哈希格式不符：'+key)
+            digest=hashlib.sha256((stage/rel).read_bytes()).hexdigest()
+            if digest != expected:
+                raise ValueError('候选二进制哈希不符：'+key)
+    except (OSError,ValueError,KeyError,TypeError) as error:
+        raise RuntimeError('候选包清单校验失败：'+str(error)) from error
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('action',choices=['apply','rollback'])
-    p.add_argument('--stage',type=Path,default=STAGE,help='apply 时使用的完整候选包目录')
+    p.add_argument('--stage',type=Path,help='apply 时使用的完整候选包目录及发布清单')
     args=p.parse_args()
     if subprocess.run(['/usr/bin/pgrep','-x','Chill With You'],stdout=subprocess.DEVNULL).returncode==0:
         raise RuntimeError('请先正常退出游戏，不能替换正在加载的运行库。')
-    root=PROJECT/'.local/runtime-backups';root.mkdir(parents=True,exist_ok=True)
+    root=PROJECT/'.local/runtime-backups'
     manifest=root/'latest.json'
     if args.action=='apply':
-        stage=args.stage.resolve()
+        stage=(args.stage or STAGE).resolve()
         for rel in ['BepInEx/core/MonoMod.Core.dll',*FILES]:
             if not (stage/rel).is_file():raise RuntimeError('缺少准备好的构建产物：'+rel)
+        if args.stage is not None:verify_candidate(stage)
+        else:
+            runtime=RUNTIME.resolve()
+            if stage == runtime or stage in runtime.parents or runtime in stage.parents:
+                raise RuntimeError('候选目录与现用运行目录重叠，拒绝安装。')
+        root.mkdir(parents=True,exist_ok=True)
         backup=root/(time.strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex);backup.mkdir()
         shutil.copytree(RUNTIME/'BepInEx/core',backup/'core')
         absent=[]

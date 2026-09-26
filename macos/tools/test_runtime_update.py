@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -15,6 +16,39 @@ spec.loader.exec_module(runtime_update)
 
 
 class RollbackTests(unittest.TestCase):
+    def test_explicit_candidate_rejects_hash_mismatch_before_backup(self):
+        old_project, old_runtime = runtime_update.PROJECT, runtime_update.RUNTIME
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            runtime = project / "runtime"
+            stage = project / "candidate"
+            runtime_update.PROJECT, runtime_update.RUNTIME = project, runtime
+            try:
+                core = runtime / "BepInEx/core"
+                core.mkdir(parents=True)
+                (core / "MonoMod.Core.dll").write_bytes(b"old")
+                stage_core = stage / "BepInEx/core"
+                stage_core.mkdir(parents=True)
+                (stage_core / "MonoMod.Core.dll").write_bytes(b"new")
+                for rel in runtime_update.FILES:
+                    file = stage / rel
+                    file.parent.mkdir(parents=True, exist_ok=True)
+                    file.write_bytes(b"new")
+                release = {"sourceWorkingTreeDirty": False, "mediaAbi": 2, "binaries": {}}
+                for key, rel in runtime_update.BINARY_FILES.items():
+                    release["binaries"][key] = {"relativePath": rel, "sha256": "0" * 64}
+                (stage / "release-manifest.json").write_text(json.dumps(release))
+                with patch.object(sys, "argv", ["runtime_update.py", "apply", "--stage", str(stage)]), \
+                     patch.object(runtime_update.subprocess, "run", return_value=SimpleNamespace(returncode=1)):
+                    with self.assertRaisesRegex(RuntimeError, "哈希不符"):
+                        runtime_update.main()
+                self.assertEqual((core / "MonoMod.Core.dll").read_bytes(), b"old")
+                self.assertFalse((project / ".local/runtime-backups").exists())
+                with self.assertRaisesRegex(RuntimeError, "重叠"):
+                    runtime_update.verify_candidate(runtime.resolve())
+            finally:
+                runtime_update.PROJECT, runtime_update.RUNTIME = old_project, old_runtime
+
     def test_failed_apply_restores_runtime_and_keeps_previous_rollback_target(self):
         old_project, old_runtime, old_stage = (
             runtime_update.PROJECT, runtime_update.RUNTIME, runtime_update.STAGE)
@@ -79,6 +113,11 @@ class RollbackTests(unittest.TestCase):
                         target = runtime / rel
                         target.parent.mkdir(parents=True, exist_ok=True)
                         target.write_bytes(b"old:" + rel.encode())
+                release = {"sourceWorkingTreeDirty": False, "mediaAbi": 2, "binaries": {}}
+                for key, rel in runtime_update.BINARY_FILES.items():
+                    release["binaries"][key] = {"relativePath": rel,
+                        "sha256": hashlib.sha256((stage / rel).read_bytes()).hexdigest()}
+                (stage / "release-manifest.json").write_text(json.dumps(release))
                 config = runtime / runtime_update.CONFIG_REL
                 config.parent.mkdir(parents=True, exist_ok=True)
                 config.write_text('{"SchemaVersion":1,"Netease":{"RepeatQueue":false}}')
