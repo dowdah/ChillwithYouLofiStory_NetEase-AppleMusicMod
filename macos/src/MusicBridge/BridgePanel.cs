@@ -1,4 +1,6 @@
 using System;
+using System.Reflection;
+using HarmonyLib;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -1238,11 +1240,32 @@ internal static class BridgePanel
 		ApplyExpanded(!_expanded, log: true);
 	}
 
-	internal static void ShowFromOverlay()
+	internal static bool ShowFromOverlay()
 	{
-		SetTopDockVisible(true);
-		SetDockVisible(true);
-		ApplyExpanded(true, log: false);
+		if (_section != null && _section.activeInHierarchy)
+		{
+			ApplyExpanded(true, log: false);
+			return true;
+		}
+		Type type = AccessTools.TypeByName("Bulbul.MusicUI") ?? AccessTools.TypeByName("MusicUI");
+		MethodInfo activate = type == null ? null : AccessTools.Method(type, "ActivatePlayList");
+		if (activate == null || activate.GetParameters().Length != 0) return false;
+		foreach (UnityEngine.Object found in Resources.FindObjectsOfTypeAll(type))
+		{
+			Component component = found as Component;
+			if (component == null || !component.gameObject.scene.IsValid()) continue;
+			try
+			{
+				activate.Invoke(component, null);
+				ApplyExpanded(true, log: false);
+				return true;
+			}
+			catch (Exception ex)
+			{
+				BridgeLog.Warn("迷你条无法打开游戏曲库（" + ex.GetType().Name + "）。");
+			}
+		}
+		return false;
 	}
 
 	private static void ApplyExpanded(bool expanded, bool log)

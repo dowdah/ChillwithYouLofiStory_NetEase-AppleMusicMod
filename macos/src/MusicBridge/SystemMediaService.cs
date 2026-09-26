@@ -100,7 +100,14 @@ internal static class SystemMediaService
                 return;
             }
         }
-        StatusText = Bridge.RegisteredTargets == 6 ? "已启用 · 网易云" : "正在等待系统注册媒体命令";
+        int targets = Bridge.RegisteredTargets;
+        if (targets < 0)
+        {
+            StatusText = "媒体桥接注册失败；请手动重试";
+            Deactivate(); Bridge.Shutdown();
+            return;
+        }
+        StatusText = targets == 6 ? "已启用 · 网易云" : "正在等待系统注册媒体命令";
         for (int i = 0; i < 16 && Bridge.Poll(out var command); i++)
         {
             PlaybackSnapshot current = PlaybackSnapshotService.Capture();

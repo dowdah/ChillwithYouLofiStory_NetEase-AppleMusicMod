@@ -57,8 +57,7 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 			if (_shuffle == value) return;
 			_shuffle = value;
 			_shuffleNavigator.Begin(ShuffleCandidates(), CurrentTrack?.Id ?? 0);
-			if (State == PlaybackState.Playing && CurrentTrack != null)
-				_shuffleNavigator.ConfirmPlaying(CurrentTrack.Id);
+			ConfirmShuffleHistoryIfStarted();
 			CancelPrefetch();
 		}
 	}
@@ -195,8 +194,7 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		if (previous.Netease.NoRepeatShuffle != next.Netease.NoRepeatShuffle && Shuffle)
 		{
 			_shuffleNavigator.Begin(ShuffleCandidates(), CurrentTrack?.Id ?? 0);
-			if (State == PlaybackState.Playing && CurrentTrack != null)
-				_shuffleNavigator.ConfirmPlaying(CurrentTrack.Id);
+			ConfirmShuffleHistoryIfStarted();
 		}
 	}
 
@@ -1017,6 +1015,7 @@ internal sealed partial class AudioPlayer : MonoBehaviour
                 }
                 _sawPlaying = true;
                 _lastGoodPosition = (float)_progress.Position;
+				ConfirmShuffleHistoryIfStarted();
 				_resumeAttempts = 0;
 			}
 			else if (_sawPlaying)
@@ -1076,8 +1075,6 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 
 	private void Notify()
 	{
-		if (State == PlaybackState.Playing && CurrentTrack != null && !IsFm)
-			_shuffleNavigator.ConfirmPlaying(CurrentTrack.Id);
 		try
 		{
 			if (this.StateChanged != null)
@@ -1089,6 +1086,14 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		{
 			BridgeLog.Error("播放状态回调异常：" + ex.Message);
 		}
+	}
+
+	private void ConfirmShuffleHistoryIfStarted()
+	{
+		if (CurrentTrack == null || IsFm || State != PlaybackState.Playing ||
+			AudioOutputRecovery.OutputUnavailable || IsBuffering || _source == null || !_source.isPlaying ||
+			(_flacStream != null && _flacStream.FirstPcmTicks == 0)) return;
+		_shuffleNavigator.ConfirmPlaying(CurrentTrack.Id);
 	}
 
 	private void OnApplicationQuit()

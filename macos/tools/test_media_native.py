@@ -62,8 +62,11 @@ class MediaNativeTests(unittest.TestCase):
                           diagnostics.queue_depth, diagnostics.registered_targets), (0, 0, 0, 0, 0))
         bad = Snapshot(abi=2, size=0, title=b"invalid")
         self.assertEqual(lib.mb_media_publish(ctypes.byref(bad)), 0)
+        malformed = Snapshot(abi=2, size=ctypes.sizeof(Snapshot), title=b"\xff")
+        self.assertEqual(lib.mb_media_publish(ctypes.byref(malformed)), 0)
         self.assertEqual(lib.mb_media_registered_target_count(), 0)
         lib.mb_media_shutdown()
+        self.assertEqual(lib.mb_media_registered_target_count(), 0)
 
 
 if __name__ == "__main__":

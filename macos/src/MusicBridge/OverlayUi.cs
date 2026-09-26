@@ -23,6 +23,7 @@ internal static class OverlayUi
         internal long ScrubEpoch;
         internal string ScrubTrackKey;
         internal bool Scrubbing;
+        internal bool VolumeDragging;
     }
 
     private static Canvas _canvas;
@@ -191,7 +192,14 @@ internal static class OverlayUi
         window.LockLabel = lockButton.GetComponentInChildren<TextMeshProUGUI>();
         lockButton.onClick.AddListener(() => SaveOverlayOption("MiniPlayerLocked", !MusicBridgeOptions.Current.Overlay.MiniPlayerLocked));
         UiKit.CreatePillButton(header.transform, "曲库", false, UiKit.LineColor, 26f, 52f)
-            .onClick.AddListener(BridgePanel.ShowFromOverlay);
+            .onClick.AddListener(() =>
+            {
+                if (!BridgePanel.ShowFromOverlay())
+                {
+                    _operationError = "曲库暂不可打开";
+                    _operationErrorUntil = Time.unscaledTime + 5f;
+                }
+            });
         UiKit.CreatePillButton(header.transform, "设置", false, UiKit.LineColor, 26f, 54f)
             .onClick.AddListener(() => SettingsPanelUi.Open(window.Root.transform, 0));
         UiKit.CreatePillButton(header.transform, "关闭", false, UiKit.LineColor, 26f, 54f)
@@ -216,6 +224,8 @@ internal static class OverlayUi
         UiKit.CreateText(volume.transform, "音量", 11f, TextAnchor.MiddleLeft);
         window.Volume = UiKit.CreateBarSlider(volume.transform, true, 110f);
         window.Volume.onValueChanged.AddListener(MusicTransport.SetVolume);
+        UiKit.AddPressCallbacks(window.Volume.gameObject,
+            () => window.VolumeDragging = true, () => window.VolumeDragging = false);
         var progress = UiKit.CreateRow(window.Root.transform, "Progress", 24f, 5f);
         window.Progress = UiKit.CreateBarSlider(progress.transform, false);
         window.Time = UiKit.CreateText(progress.transform, "--:-- / --:--", 11f, TextAnchor.MiddleRight);
@@ -236,11 +246,12 @@ internal static class OverlayUi
     {
         Color background = UiKit.DockOpaque;
         background.a = _opacityPreview ?? options.BackgroundOpacity;
-        window.Background.color = background;
-        window.Header.text = "歌词 · " + BridgePanel.ProviderName(playback.Owner) +
+        if (window.Background.color != background) window.Background.color = background;
+        string header = "歌词 · " + BridgePanel.ProviderName(playback.Owner) +
             (options.LyricsLocked ? " · 已锁定" : "") +
             (Time.unscaledTime < _operationErrorUntil ? " · " + _operationError : "") +
             (OverlayLayoutStore.LastError == null ? "" : " · " + OverlayLayoutStore.LastError);
+        if (window.Header.text != header) window.Header.text = header;
         if (window.LockLabel.text != (options.LyricsLocked ? "解锁" : "锁定"))
             window.LockLabel.text = options.LyricsLocked ? "解锁" : "锁定";
         float originalSize = 16f * (_fontPreview ?? options.LyricsFontScale);
@@ -277,11 +288,12 @@ internal static class OverlayUi
     {
         Color background = UiKit.DockOpaque;
         background.a = _opacityPreview ?? options.BackgroundOpacity;
-        window.Background.color = background;
-        window.Header.text = "迷你播放 · " + BridgePanel.ProviderName(playback.Owner) +
+        if (window.Background.color != background) window.Background.color = background;
+        string header = "迷你播放 · " + BridgePanel.ProviderName(playback.Owner) +
             (options.MiniPlayerLocked ? " · 已锁定" : "") +
             (Time.unscaledTime < _operationErrorUntil ? " · " + _operationError : "") +
             (OverlayLayoutStore.LastError == null ? "" : " · " + OverlayLayoutStore.LastError);
+        if (window.Header.text != header) window.Header.text = header;
         if (window.LockLabel.text != (options.MiniPlayerLocked ? "解锁" : "锁定"))
             window.LockLabel.text = options.MiniPlayerLocked ? "解锁" : "锁定";
         if (window.TrackKey != playback.TrackKey)
@@ -297,18 +309,26 @@ internal static class OverlayUi
         if (window.Title.text != title) window.Title.text = title;
         string artist = playback.Artist ?? "";
         if (window.Artist.text != artist) window.Artist.text = artist;
-        window.Favorite.gameObject.SetActive(playback.Owner == MusicProvider.Netease && !string.IsNullOrEmpty(playback.TrackKey));
-        window.Previous.interactable = playback.CanPrevious;
-        window.Next.interactable = playback.CanNext;
-        window.Play.interactable = !string.IsNullOrEmpty(playback.TrackKey);
+        bool favoriteVisible = playback.Owner == MusicProvider.Netease && !string.IsNullOrEmpty(playback.TrackKey);
+        if (window.Favorite.gameObject.activeSelf != favoriteVisible)
+            window.Favorite.gameObject.SetActive(favoriteVisible);
+        if (window.Previous.interactable != playback.CanPrevious) window.Previous.interactable = playback.CanPrevious;
+        if (window.Next.interactable != playback.CanNext) window.Next.interactable = playback.CanNext;
+        bool canPlayPause = !string.IsNullOrEmpty(playback.TrackKey);
+        if (window.Play.interactable != canPlayPause) window.Play.interactable = canPlayPause;
         string playLabel = playback.DesiredPlaying ? "暂停" : "播放";
         if (window.PlayLabel.text != playLabel) window.PlayLabel.text = playLabel;
         if (!window.Scrubbing)
-            window.Progress.SetValueWithoutNotify(playback.Duration > 0 ?
-                Mathf.Clamp01((float)(playback.Position / playback.Duration)) : 0f);
-        window.Progress.interactable = playback.CanSeek;
-        window.Volume.interactable = playback.Volume >= 0;
-        if (playback.Volume >= 0) window.Volume.SetValueWithoutNotify(playback.Volume);
+        {
+            float progress = playback.Duration > 0 ? Mathf.Clamp01((float)(playback.Position / playback.Duration)) : 0f;
+            if (Mathf.Abs(window.Progress.value - progress) > 0.0005f)
+                window.Progress.SetValueWithoutNotify(progress);
+        }
+        if (window.Progress.interactable != playback.CanSeek) window.Progress.interactable = playback.CanSeek;
+        bool canSetVolume = playback.Volume >= 0;
+        if (window.Volume.interactable != canSetVolume) window.Volume.interactable = canSetVolume;
+        if (canSetVolume && !window.VolumeDragging && Mathf.Abs(window.Volume.value - playback.Volume) > 0.001f)
+            window.Volume.SetValueWithoutNotify(playback.Volume);
         string time = playback.Duration > 0 ? Format(playback.Position) + " / " + Format(playback.Duration) : "--:-- / --:--";
         if (window.Time.text != time) window.Time.text = time;
     }

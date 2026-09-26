@@ -11,9 +11,10 @@ static mb_media_command g_queue[64];
 static unsigned g_head, g_count;
 static uint64_t g_sequence, g_epoch, g_track_token;
 static uint64_t g_received, g_accepted, g_rejected;
-static int32_t g_active, g_capabilities, g_registered;
+static int32_t g_active, g_capabilities, g_registered, g_bridge_failed;
 static MPRemoteCommand *g_commands[6];
 static id g_tokens[6];
+static BOOL g_original_enabled[6], g_last_enabled[6], g_did_set_enabled[6];
 static NSDictionary *g_last_info;
 
 static double monotonic_seconds(void) {
@@ -64,6 +65,8 @@ static void register_targets(void) {
         MB_MEDIA_NEXT, MB_MEDIA_PREVIOUS, MB_MEDIA_SEEK };
     for (int i = 0; i < 6; i++) {
         int type = types[i];
+        g_original_enabled[i] = g_commands[i].enabled;
+        g_did_set_enabled[i] = NO;
         g_tokens[i] = [g_commands[i] addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *event) {
             double seek = 0;
             if (type == MB_MEDIA_SEEK && [event isKindOfClass:[MPChangePlaybackPositionCommandEvent class]])
@@ -79,8 +82,11 @@ static void register_targets(void) {
 static void unregister_targets(void) {
     for (int i = 0; i < 6; i++) {
         if (g_tokens[i] != nil) [g_commands[i] removeTarget:g_tokens[i]];
+        if (g_did_set_enabled[i] && g_commands[i].enabled == g_last_enabled[i])
+            g_commands[i].enabled = g_original_enabled[i];
         g_tokens[i] = nil;
         g_commands[i] = nil;
+        g_did_set_enabled[i] = NO;
     }
     pthread_mutex_lock(&g_gate);
     g_registered = 0;
@@ -96,10 +102,20 @@ static void clear_ours(void) {
     g_last_info = nil;
 }
 
+static void safely_unregister_and_clear(void) {
+    @try { unregister_targets(); } @catch (NSException *exception) { }
+    @try { clear_ours(); } @catch (NSException *exception) { }
+}
+
 uint32_t mb_media_abi_version(void) { return MB_MEDIA_ABI; }
 
 int32_t mb_media_initialize(void) {
-    if (@available(macOS 10.12.2, *)) return 1;
+    if (@available(macOS 10.12.2, *)) {
+        pthread_mutex_lock(&g_gate);
+        g_bridge_failed = 0;
+        pthread_mutex_unlock(&g_gate);
+        return 1;
+    }
     return 0;
 }
 
@@ -108,7 +124,7 @@ int32_t mb_media_publish(const mb_media_snapshot *snapshot) {
         snapshot->size != sizeof(mb_media_snapshot) || snapshot->title == NULL ||
         !isfinite(snapshot->position_seconds) || !isfinite(snapshot->duration_seconds) ||
         snapshot->position_seconds < 0 || snapshot->duration_seconds < 0) return 0;
-    @autoreleasepool {
+    @try { @autoreleasepool {
         NSString *title = [NSString stringWithUTF8String:snapshot->title];
         NSString *artist = snapshot->artist ? [NSString stringWithUTF8String:snapshot->artist] : @"";
         if (title == nil || title.length == 0) return 0;
@@ -121,7 +137,7 @@ int32_t mb_media_publish(const mb_media_snapshot *snapshot) {
         pthread_mutex_lock(&g_gate);
         g_active = 1; g_epoch = epoch; g_track_token = snapshot->track_token; g_capabilities = caps;
         pthread_mutex_unlock(&g_gate);
-        on_main(^{
+        on_main(^{ @try {
             pthread_mutex_lock(&g_gate);
             BOOL current = g_active && g_epoch == epoch;
             pthread_mutex_unlock(&g_gate);
@@ -129,7 +145,10 @@ int32_t mb_media_publish(const mb_media_snapshot *snapshot) {
             register_targets();
             for (int i = 0; i < 6; i++) {
                 int flag = i == 0 ? 1 : i == 1 ? 2 : i == 2 ? 3 : i == 3 ? 4 : i == 4 ? 8 : 16;
-                g_commands[i].enabled = (caps & flag) != 0;
+                BOOL desired = (caps & flag) != 0;
+                g_commands[i].enabled = desired;
+                g_last_enabled[i] = desired;
+                g_did_set_enabled[i] = YES;
             }
             NSMutableDictionary *info = [NSMutableDictionary dictionary];
             info[MPMediaItemPropertyTitle] = title;
@@ -141,7 +160,18 @@ int32_t mb_media_publish(const mb_media_snapshot *snapshot) {
             center.nowPlayingInfo = info;
             center.playbackState = state == 1 ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
             g_last_info = [info copy];
-        });
+        } @catch (NSException *exception) {
+            pthread_mutex_lock(&g_gate);
+            g_active = 0; g_capabilities = 0; g_bridge_failed = 1;
+            g_count = 0; g_head = 0;
+            pthread_mutex_unlock(&g_gate);
+            safely_unregister_and_clear();
+        } });
+    } } @catch (NSException *exception) {
+        pthread_mutex_lock(&g_gate);
+        g_active = 0; g_capabilities = 0; g_bridge_failed = 1;
+        pthread_mutex_unlock(&g_gate);
+        return 0;
     }
     return 1;
 }
@@ -151,7 +181,7 @@ void mb_media_deactivate(uint64_t owner_epoch) {
     if (g_active && g_epoch == owner_epoch) {
         g_active = 0; g_capabilities = 0; g_count = 0; g_head = 0;
         pthread_mutex_unlock(&g_gate);
-        on_main(^{ unregister_targets(); clear_ours(); });
+        on_main(^{ safely_unregister_and_clear(); });
         return;
     }
     pthread_mutex_unlock(&g_gate);
@@ -170,7 +200,7 @@ int32_t mb_media_poll(mb_media_command *out_command) {
 
 int32_t mb_media_registered_target_count(void) {
     pthread_mutex_lock(&g_gate);
-    int count = g_registered;
+    int count = g_bridge_failed ? -1 : g_registered;
     pthread_mutex_unlock(&g_gate);
     return count;
 }
@@ -190,5 +220,5 @@ void mb_media_shutdown(void) {
     pthread_mutex_lock(&g_gate);
     g_active = 0; g_capabilities = 0; g_count = 0; g_head = 0;
     pthread_mutex_unlock(&g_gate);
-    on_main(^{ unregister_targets(); clear_ours(); });
+    on_main(^{ safely_unregister_and_clear(); });
 }
