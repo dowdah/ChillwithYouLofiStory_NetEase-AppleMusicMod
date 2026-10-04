@@ -4,8 +4,10 @@ internal static class MusicTransport
 {
 	private static IMusicModule T => MusicModules.Current;
     public static bool FmControls => T.Id == MusicProvider.Netease && NeteaseRuntime.Fm.Active;
-    public static bool CanPrevious => !FmControls || (NeteaseRuntime.Fm.CanPrevious && !NeteaseRuntime.Fm.Suspended);
-    public static bool CanNext => !FmControls || (!NeteaseRuntime.Fm.Waiting && !NeteaseRuntime.Fm.Suspended);
+    public static bool CanPrevious => T.HasTrack && (T.Id != MusicProvider.Netease ||
+        (AudioPlayer.Instance != null && AudioPlayer.Instance.CanPrevious));
+    public static bool CanNext => T.HasTrack && (T.Id != MusicProvider.Netease ||
+        (AudioPlayer.Instance != null && AudioPlayer.Instance.CanNext));
     public static bool CanChangeMode => !FmControls;
 
 	public static void ClaimSelected()
@@ -15,8 +17,30 @@ internal static class MusicTransport
 
 	public static void TogglePlayPause()
 	{
+		if (PlaybackCoordinator.StoryYielding)
+		{
+			if (T.IsPlaying) EnsurePaused();
+			return;
+		}
 		PlaybackCoordinator.MarkUserChose();
 		T.TogglePlayPause();
+	}
+
+	public static bool EnsurePlaying()
+	{
+		if (!T.HasTrack || PlaybackCoordinator.StoryYielding) return false;
+		if (T.Id != MusicProvider.Netease) return T.IsPlaying;
+		return AudioPlayer.Instance != null && AudioPlayer.Instance.EnsurePlaying();
+	}
+
+	public static bool EnsurePaused()
+	{
+		if (!T.HasTrack) return false;
+		PlaybackCoordinator.CancelStoryResume();
+		if (T.Id == MusicProvider.Netease)
+			return AudioPlayer.Instance != null && AudioPlayer.Instance.EnsurePaused();
+		if (T.IsPlaying) T.PauseIfPlaying();
+		return true;
 	}
 
 	public static void Next()

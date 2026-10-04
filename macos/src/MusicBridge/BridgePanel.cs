@@ -1,4 +1,6 @@
 using System;
+using System.Reflection;
+using HarmonyLib;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -133,6 +135,7 @@ internal static class BridgePanel
 	private static int _renderedQrVersion = -1;
 
 	private static bool _subscribed;
+	internal static int SubscriberCount => _subscribed ? (AudioPlayer.Instance != null ? 3 : 2) : 0;
 
 	private static TextMeshProUGUI _collapseLabel;
 
@@ -163,6 +166,7 @@ internal static class BridgePanel
 	private static bool _isScrubbing;
 
 	private static long _lyricsTrackId = -1L;
+	private static MusicProvider _lyricsOwner = MusicProvider.GameBuiltIn;
 
 	private static MusicProvider _provider = MusicProvider.Netease;
 
@@ -413,6 +417,7 @@ internal static class BridgePanel
 		contentSizeFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 		_section.AddComponent<BridgeSectionKeeper>();
 		BuildDockedHeader();
+		OverlayUi.Attach(_topDock != null ? _topDock.GetComponentInParent<Canvas>() : null);
 		BuildTopSpacer(parent);
 		NeteasePanelUi.Build((_topDock != null) ? _topDock.transform : _section.transform, _section.transform);
 		NeteasePanelUi.SetVisible(visible: false);
@@ -438,6 +443,8 @@ internal static class BridgePanel
 		component.minWidth = 130f;
 		component.flexibleWidth = 0f;
 		UiKit.CreateSpacer(gameObject.transform);
+		UiKit.CreatePillButton(gameObject.transform, "设置", filled: false, UiKit.LineColor, 28f, 62f)
+			.onClick.AddListener(() => SettingsPanelUi.Open(gameObject.transform));
 		Button button = UiKit.CreatePillButton(gameObject.transform, CollapseLabel(expanded: true), filled: false, UiKit.LineColor, 28f, 96f);
 		_collapseLabel = button.GetComponentInChildren<TextMeshProUGUI>();
 		if (_collapseLabel != null)
@@ -1233,6 +1240,34 @@ internal static class BridgePanel
 		ApplyExpanded(!_expanded, log: true);
 	}
 
+	internal static bool ShowFromOverlay()
+	{
+		if (_section != null && _section.activeInHierarchy)
+		{
+			ApplyExpanded(true, log: false);
+			return true;
+		}
+		Type type = AccessTools.TypeByName("Bulbul.MusicUI") ?? AccessTools.TypeByName("MusicUI");
+		MethodInfo activate = type == null ? null : AccessTools.Method(type, "ActivatePlayList");
+		if (activate == null || activate.GetParameters().Length != 0) return false;
+		foreach (UnityEngine.Object found in Resources.FindObjectsOfTypeAll(type))
+		{
+			Component component = found as Component;
+			if (component == null || !component.gameObject.scene.IsValid()) continue;
+			try
+			{
+				activate.Invoke(component, null);
+				ApplyExpanded(true, log: false);
+				return true;
+			}
+			catch (Exception ex)
+			{
+				BridgeLog.Warn("迷你条无法打开游戏曲库（" + ex.GetType().Name + "）。");
+			}
+		}
+		return false;
+	}
+
 	private static void ApplyExpanded(bool expanded, bool log)
 	{
 		_expanded = expanded;
@@ -1302,15 +1337,6 @@ internal static class BridgePanel
 		if (text != _nowKey)
 		{
 			_nowKey = text;
-			if (selected.SupportsLyrics && hasTrack)
-			{
-				SyncLyricsForCurrent();
-			}
-			else
-			{
-				LyricsEngine.Reset();
-				_lyricsTrackId = -1L;
-			}
 			if (_coverImage != null)
 			{
 				if (hasTrack)
@@ -1383,7 +1409,9 @@ internal static class BridgePanel
 		if (_lyricsText != null)
 		{
 			bool changed;
-			string text3 = ((!selected.SupportsLyrics) ? "歌词：该模块不提供歌词" : (hasTrack ? LyricsEngine.GetDisplayText(num, out changed) : "歌词：未播放"));
+			IMusicModule activeLyrics = MusicModules.Current;
+			string text3 = ((!activeLyrics.SupportsLyrics) ? "歌词：该音源不提供歌词" :
+				(activeLyrics.HasTrack ? LyricsEngine.GetDisplayText(activeLyrics.Position, out changed) : "歌词：未播放"));
 			if (_lyricsText.text != text3)
 			{
 				_lyricsText.text = text3;
@@ -1402,13 +1430,15 @@ internal static class BridgePanel
             if (Time.unscaledTime < _nextTransportUiAt) return;
             _nextTransportUiAt = Time.unscaledTime + 0.05f; // 20 Hz UI; audio playback is independent.
 			LocalAudioMemory.Tick();
+			SyncLyricsForCurrent();
 			TickNowPlaying();
 			GameNowPlayingBar.Tick();
 			TickVolumeReadback();
 			bool panelVisible = (_provider == MusicProvider.AppleMusic && _section != null && _section.activeInHierarchy) || PlaybackCoordinator.Active == MusicProvider.AppleMusic;
 			AppleMusicService.TickPolling(Time.unscaledTime, panelVisible);
 			AppleMusicService.TickVolume(Time.unscaledTime);
-			AppleMusicService.TickLyrics(Time.unscaledTime, panelVisible);
+			AppleMusicService.TickLyrics(Time.unscaledTime, PlaybackCoordinator.Active == MusicProvider.AppleMusic);
+			OverlayUi.Tick();
 		}
 		catch (Exception ex)
 		{
@@ -1418,8 +1448,21 @@ internal static class BridgePanel
 
 	private static void SyncLyricsForCurrent()
 	{
+		MusicProvider owner = PlaybackCoordinator.Active;
+		if (owner != _lyricsOwner)
+		{
+			_lyricsOwner = owner;
+			_lyricsTrackId = -1L;
+			LyricsEngine.Reset();
+		}
+		if (owner != MusicProvider.Netease) return;
 		AudioPlayer instance = AudioPlayer.Instance;
 		TrackInfo trackInfo = ((instance != null) ? instance.CurrentTrack : null);
+		if (trackInfo == null && _lyricsTrackId != -1)
+		{
+			_lyricsTrackId = -1;
+			LyricsEngine.Reset();
+		}
 		if (trackInfo != null && trackInfo.Id != _lyricsTrackId)
 		{
 			_lyricsTrackId = trackInfo.Id;

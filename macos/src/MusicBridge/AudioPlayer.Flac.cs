@@ -300,6 +300,7 @@ internal sealed partial class AudioPlayer
             if (!_progress.TryObserve(_flacClipBase + _source.time, Time.realtimeSinceStartup))
             { AudioOutputRecovery.ReportProgressDiscontinuity(); return; }
             _lastGoodPosition = (float)_progress.Position; _sawPlaying = true;
+            ConfirmShuffleHistoryIfStarted();
         }
         else if (_sawPlaying || (!_clipNeedsStart && Time.realtimeSinceStartup - _trackStartedAt >= _source.clip.length))
         {

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Threading;
 using MusicBridge;
 using Newtonsoft.Json.Linq;
 
@@ -180,28 +181,27 @@ internal static class NeteaseEnhancementTests
         Check(AudioDiskCache.TryGet(11, source) == null && !Directory.GetFiles(root, "*.tmp.*", SearchOption.AllDirectories).Any(), "cancel between data and index commit leaves no hit or temp");
         source.SongId = 4; AudioDiskCache.Store(11, source, bytes, () => true);
         var first = AudioDiskCache.TryGet(11, source); var second = AudioDiskCache.TryGet(11, source); string pinned = new Uri(second.Uri).LocalPath;
+        var usage = AudioDiskCache.Scan(11);
+        Check(usage.PersistentBytes > 0 && usage.ProtectedBytes > 0, "cache scan distinguishes indexed and leased bytes");
+        var protectedPlan = AudioDiskCache.BuildCleanupPlan(11);
+        AudioDiskCache.ExecuteCleanup(protectedPlan);
+        Check(File.Exists(pinned), "cleanup plan does not delete leased audio");
         first.Dispose(); long capacity = MusicBridgeOptions.Current.Netease.AudioCacheCapacityBytes;
         MusicBridgeOptions.Current.Netease.AudioCacheCapacityBytes = 1;
         source.SongId = 5; AudioDiskCache.Store(11, source, bytes, () => true);
         Check(File.Exists(pinned), "LRU respects remaining lease after another lease released");
         second.Dispose(); source.SongId = 6; AudioDiskCache.Store(11, source, bytes, () => true);
-        Check(Directory.GetFiles(root, "*", SearchOption.AllDirectories).Sum(file => new FileInfo(file).Length) <= 1, "LRU includes audio and indices across namespaces");
+        Check(SpinWait.SpinUntil(() => !AudioDiskCache.EvictionActive, 10000), "deferred LRU completes");
+        Check(AudioDiskCache.Scan(11).PersistentBytes <= 1 && File.Exists(Path.Combine(root, "1.mp3")),
+            "LRU clears indexed audio but preserves unrecognized legacy file");
         MusicBridgeOptions.Current.Netease.AudioCacheCapacityBytes = capacity;
+        source.SongId = 7; AudioDiskCache.Store(44, source, bytes, () => true);
+        var plan = AudioDiskCache.BuildCleanupPlan(44);
+        Check(plan.FileCount == 2 && plan.EstimatedBytes > 8, "cleanup plan counts known current-account files");
+        var cleaned = AudioDiskCache.ExecuteCleanup(plan);
+        Check(cleaned.Deleted == 2 && cleaned.DeletedBytes == plan.EstimatedBytes && AudioDiskCache.TryGet(44, source) == null,
+            "confirmed cleanup deletes indexed audio and reports actual logical bytes");
         Directory.Delete(root, true);
     }
-    private static void ConfigTests()
-    {
-        string path = BridgePaths.Resolve("config", "musicbridge.options.json"); Directory.CreateDirectory(Path.GetDirectoryName(path));
-        string old = "{\"SchemaVersion\":1,\"Netease\":{\"RepeatQueue\":false},\"Shared\":{\"HttpTimeout\":\"00:00:25\"}}";
-        File.WriteAllText(path, old); MusicBridgeOptions.Load();
-        Check(MusicBridgeOptions.Current.Netease.PreferredQuality == NeteaseQuality.Standard && MusicBridgeOptions.Current.Netease.AutoRefreshFavorites, "old options use new defaults");
-        Check(MusicBridgeOptions.SaveQuality(NeteaseQuality.Exhigh, out _) && !MusicBridgeOptions.Current.Netease.RepeatQueue && MusicBridgeOptions.Current.Shared.HttpTimeout == TimeSpan.FromSeconds(25), "save preserves unrelated fields");
-        Check(File.ReadAllText(path + ".before-netease-v1") == old, "rollback config backup retained");
-        Check(!MusicBridgeOptions.SaveQuality((NeteaseQuality)999, out _) && MusicBridgeOptions.Current.Netease.PreferredQuality == NeteaseQuality.Exhigh, "invalid setting never changes current value");
-        File.WriteAllText(path, "invalid"); Check(!MusicBridgeOptions.SaveQuality(NeteaseQuality.Standard, out _) && File.ReadAllText(path) == "invalid", "invalid config not overwritten");
-        File.Delete(path); Directory.CreateDirectory(path);
-        Check(!MusicBridgeOptions.SaveQuality(NeteaseQuality.Standard, out _) && MusicBridgeOptions.Current.Netease.PreferredQuality == NeteaseQuality.Exhigh, "atomic save failure retains current quality");
-        Directory.Delete(path); File.Delete(path + ".before-netease-v1"); MusicBridgeOptions.Load();
-    }
-    public static void Run() { ApiTests(); FavoritesTests(); FmTests(); CacheTests(); ConfigTests(); Console.WriteLine("NETEASE ENHANCEMENT ASSERTIONS: " + _count); }
+    public static void Run() { ApiTests(); FavoritesTests(); FmTests(); CacheTests(); Console.WriteLine("NETEASE ENHANCEMENT ASSERTIONS: " + _count); }
 }

@@ -22,8 +22,17 @@ trap 'rm -rf -- "$STAGE"' EXIT
 unzip -q "$ARCHIVE" -d "$STAGE"
 DEST="${MUSICBRIDGE_BUILD_DEST:-$MOD_SOURCE/dist/ChillMusicMac}"
 mkdir -p "$DEST/BepInEx/core" "$DEST/BepInEx/plugins/ChillWithYouMusicBridge"
-"$MOD_SOURCE/build-native-runtime.sh"
-cp "$MOD_SOURCE"/.downloads/native-core/* "$DEST/BepInEx/core/"
+NATIVE_CORE_DIR="${MUSICBRIDGE_NATIVE_CORE_DIR:-$MOD_SOURCE/.downloads/native-core}"
+if [[ -n "${MUSICBRIDGE_NATIVE_CORE_DIGEST:-}" ]]; then
+    [[ -d "$NATIVE_CORE_DIR" && -f "$NATIVE_CORE_DIR/BepInEx.dll" ]] || { echo '缺少指定的原生运行库缓存。' >&2; exit 1; }
+    [[ -z "$(find "$NATIVE_CORE_DIR" -maxdepth 1 -type l -print -quit)" ]] || { echo '原生运行库缓存含符号链接，停止。' >&2; exit 1; }
+    ACTUAL_CORE_DIGEST=$(cd "$NATIVE_CORE_DIR" && find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | awk '{print $1}')
+    [[ "$ACTUAL_CORE_DIGEST" == "$MUSICBRIDGE_NATIVE_CORE_DIGEST" ]] || { echo '原生运行库缓存摘要不匹配，停止。' >&2; exit 1; }
+    echo "使用独立提供且已验摘要的原生运行库目录：$ACTUAL_CORE_DIGEST"
+else
+    "$MOD_SOURCE/build-native-runtime.sh"
+fi
+cp "$NATIVE_CORE_DIR"/* "$DEST/BepInEx/core/"
 cp "$STAGE/libdoorstop.dylib" "$DEST/"
 cp "$MOD_SOURCE/../Chill with You Lo-Fi Story/BepInEx/LICENSE" "$DEST/BepInEx/LICENSE"
 cp "$MOD_SOURCE/.downloads/bepinex-native-src/LICENSE" "$DEST/BepInEx/LICENSE.native-MIT"
@@ -32,11 +41,14 @@ cp "$MOD_SOURCE/../LICENSE" "$DEST/LICENSE"
 cp "$MOD_SOURCE/src/bin/Release/netstandard2.1/MusicBridge.Plugin.dll" "$DEST/BepInEx/plugins/ChillWithYouMusicBridge/"
 bash "$MOD_SOURCE/build-audio-native.sh"
 cp "$MOD_SOURCE/.downloads/audio-native/libmusicbridge_flac.dylib" "$DEST/BepInEx/plugins/ChillWithYouMusicBridge/"
+bash "$MOD_SOURCE/build-media-native.sh"
+cp "$MOD_SOURCE/.downloads/media-native/libmusicbridge_media.dylib" "$DEST/BepInEx/plugins/ChillWithYouMusicBridge/"
 cp "$MOD_SOURCE/native/vendor/LICENSE.dr_libs" "$DEST/BepInEx/plugins/ChillWithYouMusicBridge/"
 cp "$MOD_SOURCE/scripts/music.js" "$DEST/BepInEx/plugins/ChillWithYouMusicBridge/"
 cp "$MOD_SOURCE/Start-Music-Mod.command" "$MOD_SOURCE/launch-core.sh" "$DEST/"
 cp "$MOD_SOURCE/README.md" "$DEST/使用说明.md"
 cp "$MOD_SOURCE/NATIVE-RUNTIME.md" "$MOD_SOURCE/TEST-REPORT.md" "$MOD_SOURCE/THIRD-PARTY-NOTICES.md" "$MOD_SOURCE/NETEASE-PHASE1.md" "$DEST/"
 cp "$MOD_SOURCE/NETEASE-PHASE2.md" "$DEST/"
+cp "$MOD_SOURCE/EXPERIENCE-ENHANCEMENTS.md" "$MOD_SOURCE/MEDIA-CONTROL-POC.md" "$MOD_SOURCE/EXPERIENCE-ACCEPTANCE.md" "$DEST/"
 chmod +x "$DEST/Start-Music-Mod.command" "$DEST/launch-core.sh"
 echo "构建完成：$DEST"

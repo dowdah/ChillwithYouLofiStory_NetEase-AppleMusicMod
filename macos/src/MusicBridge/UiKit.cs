@@ -18,6 +18,10 @@ internal static class UiKit
 
 	public static readonly Color DockOpaque = new Color(0.055f, 0.05f, 0.085f, 1f);
 
+	public static readonly Color SettingsRowTint = new Color(1f, 1f, 1f, 0.045f);
+
+	public static readonly Color PillFilledText = new Color(0.05f, 0.05f, 0.09f, 1f);
+
 	public static readonly Color LineColor = new Color(1f, 1f, 1f, 0.85f);
 
 	public static readonly Color LineSoft = new Color(1f, 1f, 1f, 0.32f);
@@ -600,7 +604,7 @@ internal static class UiKit
 		button.colors = colors;
 		TextMeshProUGUI textMeshProUGUI = CreateStretchText(gameObject.transform, label, size * 0.38f, TextAnchor.MiddleCenter);
 		textMeshProUGUI.fontStyle = FontStyles.Bold;
-		textMeshProUGUI.color = (solid ? new Color(0.05f, 0.05f, 0.09f, 1f) : Color.white);
+		textMeshProUGUI.color = (solid ? PillFilledText : Color.white);
 		return button;
 	}
 
@@ -651,7 +655,7 @@ internal static class UiKit
 		button.colors = colors;
 		TextMeshProUGUI textMeshProUGUI = CreateStretchText(gameObject.transform, label, GameArtistFontSize, TextAnchor.MiddleCenter);
 		textMeshProUGUI.fontStyle = FontStyles.Bold;
-		textMeshProUGUI.color = (filled ? new Color(0.05f, 0.05f, 0.09f, 1f) : Color.white);
+		textMeshProUGUI.color = (filled ? PillFilledText : Color.white);
 		return button;
 	}
 

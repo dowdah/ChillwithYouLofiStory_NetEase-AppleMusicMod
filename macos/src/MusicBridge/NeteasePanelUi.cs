@@ -543,6 +543,7 @@ internal static class NeteasePanelUi
     private static MarqueeText _qualityStatus, _favoritesStatus;
     private static NeteaseFavoriteButton _currentFavorite;
     private static string _settingsError;
+    private static bool _qualitySaving;
     private static long _confirmTrashId;
     private static string _fmUiKey;
     private static void BuildEnhancements(Transform parent)
@@ -568,15 +569,24 @@ internal static class NeteasePanelUi
     }
     private static void ChangeQuality(NeteaseQuality quality)
     {
-        MusicBridgeOptions.SaveQuality(quality, out _settingsError); RefreshEnhancements();
+        if (_qualitySaving) return;
+        _qualitySaving = true;
+        _settingsError = "正在保存首选音质…";
+        RefreshEnhancements();
+        MusicBridgeOptions.SaveQualityAsync(quality, error =>
+        {
+            _qualitySaving = false;
+            _settingsError = error;
+            RefreshEnhancements();
+        });
     }
     internal static void RefreshEnhancements()
     {
         var player = AudioPlayer.Instance; var favorites = NeteaseRuntime.Favorites; var fm = NeteaseRuntime.Fm;
-        if (_quality128 != null) _quality128.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Standard;
-        if (_quality320 != null) _quality320.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Exhigh;
-        if (_qualityLossless != null) _qualityLossless.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Lossless;
-        if (_qualityHiRes != null) _qualityHiRes.interactable = MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.HiRes;
+        if (_quality128 != null) _quality128.interactable = !_qualitySaving && MusicBridgeOptions.CanSave && MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Standard;
+        if (_quality320 != null) _quality320.interactable = !_qualitySaving && MusicBridgeOptions.CanSave && MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Exhigh;
+        if (_qualityLossless != null) _qualityLossless.interactable = !_qualitySaving && MusicBridgeOptions.CanSave && MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.Lossless;
+        if (_qualityHiRes != null) _qualityHiRes.interactable = !_qualitySaving && MusicBridgeOptions.CanSave && MusicBridgeOptions.Current.Netease.PreferredQuality != NeteaseQuality.HiRes;
         if (_refreshFavorites != null) _refreshFavorites.interactable = NeteaseRuntime.Context != null && !favorites.Refreshing;
         if (_currentFavorite != null) _currentFavorite.Bind(player != null && player.CurrentTrack != null ? player.CurrentTrack.Id : 0);
         if (_qualityStatus != null) _qualityStatus.SetContent(_settingsError ?? ((player != null ? player.PlaybackSource?.QualityLabel : null) ?? "实际音质：未加载") + (player != null && player.IsBuffering ? " · 正在缓冲…" : "") + " · 首选 " + NeteaseQualityPolicy.Label(MusicBridgeOptions.Current.Netease.PreferredQuality) + "（下次加载生效）");

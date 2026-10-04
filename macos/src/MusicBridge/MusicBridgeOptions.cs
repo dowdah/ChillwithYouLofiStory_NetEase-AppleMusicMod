@@ -9,9 +9,9 @@ namespace MusicBridge;
 
 internal sealed class MusicBridgeOptions
 {
-	public const int CurrentSchemaVersion = 1;
+	public const int CurrentSchemaVersion = 2;
 
-	public int SchemaVersion = 1;
+	public int SchemaVersion = 2;
 
 	public SharedOptions Shared = new SharedOptions();
 
@@ -26,70 +26,85 @@ internal sealed class MusicBridgeOptions
 	public LocalOptions Local = new LocalOptions();
 
 	public DebugOptions Debug = new DebugOptions();
+	public OverlayOptions Overlay = new OverlayOptions();
+	public SystemMediaOptions SystemMedia = new SystemMediaOptions();
 
 	public static MusicBridgeOptions Current { get; private set; } = new MusicBridgeOptions();
 
 	public static string Source { get; private set; } = "内建默认值";
+	public static bool CanSave { get; private set; } = true;
+	internal static SettingsStore Store { get; } = new SettingsStore(BridgePaths.Resolve("config", "musicbridge.options.json"));
 
 	public static void Load()
 	{
-		MusicBridgeOptions musicBridgeOptions = new MusicBridgeOptions();
-		string text = BridgePaths.Resolve("config", "musicbridge.options.json");
 		try
 		{
-			if (File.Exists(text))
-			{
-				string text2 = File.ReadAllText(text);
-				JObject jObject = JObject.Parse(text2);
-				List<string> list = new List<string>();
-				FindUnknown(jObject, typeof(MusicBridgeOptions), "", list);
-				if (list.Count > 0)
-				{
-					throw new InvalidDataException("未知参数：" + string.Join(", ", list.ToArray()));
-				}
-				int valueOrDefault = jObject.Value<int?>("SchemaVersion").GetValueOrDefault();
-				if (valueOrDefault != 1)
-				{
-					throw new InvalidDataException("SchemaVersion=" + valueOrDefault + "，当前只接受 " + 1);
-				}
-				JsonConvert.PopulateObject(text2, musicBridgeOptions);
-				Source = text;
-			}
-			Validate(musicBridgeOptions);
-			Current = musicBridgeOptions;
+			Current = Store.Read(out bool exists);
+			Source = exists ? Store.Path : "内建默认值";
+			CanSave = true;
 		}
 		catch (Exception ex)
 		{
 			Current = new MusicBridgeOptions();
 			Source = "内建默认值（配置被拒绝：" + ex.Message + "）";
+			CanSave = false;
 			BridgeLog.Warn("配置未加载，安全回退到唯一默认值：" + ex.Message);
 		}
 		Report();
 	}
 
-    public static bool SaveQuality(NeteaseQuality quality, out string error)
+    internal static MusicBridgeOptions Parse(string original)
     {
-        error = null;
-        string path = BridgePaths.Resolve("config", "musicbridge.options.json");
-        try
-        {
-            string original = File.Exists(path) ? File.ReadAllText(path) : null;
-            var json = original == null ? JObject.FromObject(Current) : JObject.Parse(original);
-            var unknown = new List<string>(); FindUnknown(json, typeof(MusicBridgeOptions), "", unknown);
-            if (unknown.Count > 0 || json.Value<int?>("SchemaVersion") != CurrentSchemaVersion) throw new InvalidDataException();
-            var netease = json["Netease"] as JObject;
-            if (netease == null) json["Netease"] = netease = new JObject();
-            netease["PreferredQuality"] = (int)quality;
-            var candidate = new MusicBridgeOptions(); JsonConvert.PopulateObject(json.ToString(), candidate); Validate(candidate);
-            if (original != null && !File.Exists(path + ".before-netease-v1")) AtomicFile.WriteAllText(path + ".before-netease-v1", original);
-            AtomicFile.WriteAllText(path, json.ToString(Formatting.Indented));
-            Current = candidate; Source = path; return true;
-        }
-        catch { error = "音质设置保存失败，保留原设置；请检查配置和磁盘权限"; return false; }
+        var json = JObject.Parse(original);
+        var unknown = new List<string>();
+        FindUnknown(json, typeof(MusicBridgeOptions), "", unknown);
+        if (unknown.Count > 0) throw new InvalidDataException("未知参数：" + string.Join(", ", unknown.ToArray()));
+        int version = json.Value<int?>("SchemaVersion") ?? 0;
+        if (version != 1 && version != CurrentSchemaVersion)
+            throw new InvalidDataException("不支持此配置版本 SchemaVersion=" + version);
+        var result = new MusicBridgeOptions();
+        JsonConvert.PopulateObject(original, result);
+        result.SchemaVersion = CurrentSchemaVersion;
+        Validate(result);
+        return result;
     }
 
-	private static void Validate(MusicBridgeOptions o)
+    internal static void Publish(MusicBridgeOptions options)
+    {
+        var previous = Current;
+        Current = options;
+        Source = Store.Path;
+        CanSave = true;
+        if (AudioPlayer.Instance != null)
+            AudioPlayer.Instance.ApplySettings(previous, options);
+        if (previous.Netease.AudioCacheCapacityBytes != options.Netease.AudioCacheCapacityBytes)
+            AudioDiskCache.EnforceCapacityAsync();
+    }
+
+    internal static bool PublishIfCurrent(SettingsSaveResult result)
+    {
+        if (result == null || result.Options == null || !Store.IsCurrent(result)) return false;
+        Publish(result.Options);
+        return true;
+    }
+
+    public static void SaveQualityAsync(NeteaseQuality quality, Action<string> completed)
+    {
+        if (!CanSave) { completed?.Invoke("配置版本或内容不受支持；请先修复配置文件"); return; }
+        var baseline = Store.Capture(Current);
+        Store.SavePatchAsync(baseline, new JObject { ["Netease"] = new JObject { ["PreferredQuality"] = (int)quality } },
+            result =>
+            {
+                bool published = PublishIfCurrent(result);
+                completed?.Invoke(result.Success && !published ? "设置随后又被更新；请重新打开设置" : result.Error);
+            });
+    }
+
+	internal static void Validate(MusicBridgeOptions o)
 	{
+		if (o.Shared == null || o.Netease == null || o.Apple == null || o.Lyrics == null ||
+		    o.UI == null || o.Local == null || o.Debug == null || o.Overlay == null || o.SystemMedia == null)
+			throw new InvalidDataException("配置分区不能为空");
 		RequireAllTimeSpans(o.Shared, "Shared");
 		RequireAllTimeSpans(o.Netease, "Netease");
         Require(o.Netease.FavoritesRefreshInterval, TimeSpan.FromMinutes(1), TimeSpan.FromDays(1), "Netease.FavoritesRefreshInterval");
@@ -139,6 +154,8 @@ internal sealed class MusicBridgeOptions
 		Require(o.Local.VirtualizeThreshold, 20, 100000, "Local.VirtualizeThreshold");
 		Require(o.Local.LoadedClipBudget, 2, 1000, "Local.LoadedClipBudget");
 		Require(o.Local.LoadedClipBudgetMegabytes, 16, 65536, "Local.LoadedClipBudgetMegabytes");
+		Require(o.Overlay.LyricsFontScale, 0.75f, 2f, "Overlay.LyricsFontScale");
+		Require(o.Overlay.BackgroundOpacity, 0.15f, 1f, "Overlay.BackgroundOpacity");
 		if (o.Local.UnlimitedImport && !o.Local.VirtualizeNativeList)
 		{
 			BridgeLog.Warn("配置组合有风险：Local.UnlimitedImport 已开但 Local.VirtualizeNativeList 关着。曲目超过 " + o.Local.VirtualizeThreshold + " 首后播放列表会严重卡顿甚至卡死，建议一并开启。");
@@ -197,7 +214,7 @@ internal sealed class MusicBridgeOptions
 		}
 	}
 
-	private static void FindUnknown(JObject json, Type type, string prefix, List<string> unknown)
+	internal static void FindUnknown(JObject json, Type type, string prefix, List<string> unknown)
 	{
 		Dictionary<string, FieldInfo> dictionary = new Dictionary<string, FieldInfo>(StringComparer.OrdinalIgnoreCase);
 		FieldInfo[] fields = type.GetFields(BindingFlags.Instance | BindingFlags.Public);

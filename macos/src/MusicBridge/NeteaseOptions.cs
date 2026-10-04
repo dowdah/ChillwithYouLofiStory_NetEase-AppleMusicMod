@@ -36,6 +36,7 @@ internal sealed class NeteaseOptions
     public bool RepeatQueue = true;
     public NeteaseQuality PreferredQuality = NeteaseQuality.Standard;
     public bool NextAudioPreload = true;
+    public bool NoRepeatShuffle = true;
     public bool StreamFlacDuringDownload = true;
     public bool AutoRefreshFavorites = true;
     public TimeSpan FavoritesRefreshInterval = TimeSpan.FromMinutes(5);

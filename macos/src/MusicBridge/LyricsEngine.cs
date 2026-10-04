@@ -29,6 +29,9 @@ internal static class LyricsEngine
 	private static volatile List<LyricLine> _lines = new List<LyricLine>();
 
 	private static volatile int _currentIndex = -1;
+	private static int _contentRevision;
+	private static int _requestCount;
+	public static int RequestCount => Volatile.Read(ref _requestCount);
 
 	private static int DerivativeRejects;
 
@@ -52,6 +55,7 @@ internal static class LyricsEngine
 
 	private static void Notify()
 	{
+		Interlocked.Increment(ref _contentRevision);
 		Plugin.RunOnMainThread(delegate
 		{
 			try
@@ -275,6 +279,7 @@ internal static class LyricsEngine
 			}
 		});
 		thread.IsBackground = true;
+		Interlocked.Increment(ref _requestCount);
 		thread.Start();
 	}
 
@@ -692,6 +697,7 @@ internal static class LyricsEngine
 		});
 		thread.IsBackground = true;
 		thread.Name = "MusicBridge-Lyrics";
+		Interlocked.Increment(ref _requestCount);
 		thread.Start();
 	}
 
@@ -863,6 +869,22 @@ internal static class LyricsEngine
 			return lyricLine.Text;
 		}
 		return lyricLine.Translation;
+	}
+
+	public static LyricSnapshot Snapshot(double position)
+	{
+		string context = _contextKey;
+		List<LyricLine> lines = _lines;
+		LyricsState state = _state;
+		if (context != _contextKey)
+			return new LyricSnapshot(_contextKey, Volatile.Read(ref _contentRevision), TrackId,
+				LyricsState.Loading, "歌词加载中…", -1, 0, null, null);
+		LyricSnapshot snapshot = LyricSnapshotSelector.Select(context, Volatile.Read(ref _contentRevision),
+			TrackId, state, _statusText, lines, position);
+		if (context != _contextKey)
+			return new LyricSnapshot(_contextKey, Volatile.Read(ref _contentRevision), TrackId,
+				LyricsState.Loading, "歌词加载中…", -1, 0, null, null);
+		return snapshot;
 	}
 
 	public static void Reset()
