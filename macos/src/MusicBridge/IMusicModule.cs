@@ -14,6 +14,9 @@ internal interface IMusicModule
 
 	string Artist { get; }
 
+	// Undecorated artist metadata for explicit external sharing; Artist remains UI text.
+	string TrackArtist { get; }
+
 	double Position { get; }
 
 	double Duration { get; }

@@ -57,6 +57,10 @@ internal sealed class GameBuiltInModule : IMusicModule
 		}
 	}
 
+	// Native music credit is already undecorated; do not add a UI fallback as artist metadata.
+	// (Keep Artist's existing fallback for the local interface.)
+	public string TrackArtist => LocalMusicSource.TryGet(out _, out var credit, out _) ? credit : null;
+
 	public double Position
 	{
 		get

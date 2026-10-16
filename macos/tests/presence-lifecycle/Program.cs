@@ -17,7 +17,7 @@ internal static class Program
 
     private static void Main()
     {
-        PlaybackSnapshotService.Snapshot = new PlaybackSnapshot { State = PlaybackState.Playing, Title = SecretTitle, Artist = SecretArtist };
+        PlaybackSnapshotService.Snapshot = new PlaybackSnapshot { State = PlaybackState.Playing, Title = SecretTitle, TrackArtist = SecretArtist };
         TimerSnapshotService.Snapshot = Running();
         // All external boundaries are fakes; the service, scheduler, formatter and publisher are production code.
         SteamPresenceSettingsStore.ThrowRead = true;
@@ -84,7 +84,7 @@ internal static class Program
         Check(!SteamPresenceService.Diagnostics.Contains(SecretTitle), "diagnostics stays title-free even when publishing titles");
         Check(!SteamPresenceService.Diagnostics.Contains(SecretArtist), "diagnostics stays artist-free even when publishing artists");
         SteamPresenceApi.ThrowSet = true;
-        PlaybackSnapshotService.Snapshot = new PlaybackSnapshot { State = PlaybackState.Paused, Title = SecretTitle, Artist = SecretArtist };
+        PlaybackSnapshotService.Snapshot = new PlaybackSnapshot { State = PlaybackState.Paused, Title = SecretTitle, TrackArtist = SecretArtist };
         Tick(46);
         Check(!SteamPresenceService.Diagnostics.Contains("PRIVATE_EXCEPTION"), "Steam write error remains isolated and redacted");
         SteamPresenceApi.ThrowSet = false; SteamPresenceService.Retry(); Tick(51);
@@ -155,7 +155,7 @@ namespace MusicBridge
         }
         internal static string ErrorKind(Exception ex) => ex.GetType().Name;
     }
-    internal struct PlaybackSnapshot { internal PlaybackState State; internal string Title, Artist; }
+    internal struct PlaybackSnapshot { internal PlaybackState State; internal string Title, TrackArtist; }
     internal static class PlaybackSnapshotService
     {
         internal static PlaybackSnapshot Snapshot;

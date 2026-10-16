@@ -25,8 +25,6 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 	private static AudioPlayer _instance;
 
 	private AudioSource _source;
-	private PlayerVolumeStore _volumeStore;
-	private string _lastVolumeError;
 
 	private int _generation;
 	private long _sessionEpoch;
@@ -137,27 +135,6 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 				return State != PlaybackState.Idle;
 			}
 			return false;
-		}
-	}
-
-	public float Volume
-	{
-		get
-		{
-			if (!(_source != null))
-			{
-				return 0f;
-			}
-			return _source.volume;
-		}
-		set
-		{
-			if (float.IsNaN(value) || float.IsInfinity(value)) return;
-			if (_source != null)
-			{
-				_source.volume = Mathf.Clamp01(value);
-				_volumeStore?.Set(_source.volume, Time.realtimeSinceStartup);
-			}
 		}
 	}
 
@@ -1130,10 +1107,4 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		ReleaseClip();
 	}
 
-    private void ReportVolumeError()
-    {
-        string error = _volumeStore?.LastError;
-        if (error != null && error != _lastVolumeError) BridgeLog.Warn(error);
-        _lastVolumeError = error;
-    }
 }

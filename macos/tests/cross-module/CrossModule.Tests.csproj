@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GameManagedDir Condition="'$(GameManagedDir)' == ''">$(HOME)/Library/Application Support/Steam/steamapps/common/Chill with You Lo-Fi Story/Chill With You.app/Contents/Resources/Data/Managed</GameManagedDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(GameManagedDir)/Newtonsoft.Json.dll</HintPath></Reference>
+    <Compile Include="Program.cs;RuntimeFakes.cs" />
+    <Compile Include="../../src/MusicBridge/IMusicModule.cs;../../src/MusicBridge/AppleModule.cs;../../src/MusicBridge/NeteaseModule.cs;../../src/MusicBridge/GameBuiltInModule.cs;../../src/MusicBridge/MusicProvider.cs;../../src/MusicBridge/SmtcSnapshot.cs;../../src/MusicBridge/TrackInfo.cs" />
+    <Compile Include="../../src/MusicBridge/GameVolumeRelay.cs;../../src/MusicBridge/AudioPlayer.Volume.cs;../../src/MusicBridge/PlayerVolumeStore.cs;../../src/MusicBridge/AtomicFile.cs;../../src/MusicBridge/BridgePaths.cs;../../src/MusicBridge/PlaybackSnapshotService.cs;../../src/MusicBridge/PlaybackState.cs" />
+    <Compile Include="../../src/MusicBridge/SteamPresenceService.cs;../../src/MusicBridge/SteamPresenceOptions.cs;../../src/MusicBridge/SteamPresencePublisher.cs;../../src/MusicBridge/SteamPresenceFormatter.cs;../../src/MusicBridge/TimerSnapshot.cs" />
+  </ItemGroup>
+</Project>
