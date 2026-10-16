@@ -83,6 +83,7 @@ def main():
         "nativeCoreProvenance": args.native_core_provenance,
         "buildHost": {"macOS": platform.mac_ver()[0], "cpu": platform.machine()},
         "binaries": binaries,
+        "runtimeFiles": {name: sha256(candidate / name) for name in ("libdoorstop.dylib", "launch-core.sh")},
         "gameHostAcceptance": "NotRun",
         "intelGameAcceptance": "NotRun",
         "oneHourFinalSoak": "NotRun",
