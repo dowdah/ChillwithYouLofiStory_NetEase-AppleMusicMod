@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/MusicBridge/SteamPresenceApi.cs;../../src/MusicBridge/SteamPresencePublisher.cs;../../src/MusicBridge/SteamPresenceFormatter.cs;../../src/MusicBridge/PlaybackState.cs;Program.cs" />
+  </ItemGroup>
+</Project>
