@@ -2,6 +2,8 @@
 
 2026-10-16，用户在全部语言模板查询为空后，另行授权调查纯 `status`；这不是原好友列表主行功能的自动降级，也不代表音乐/计时器集成已获验收。
 
+**实测结论：纯 status 无需模板，可在独立好友账号的桌面 Steam“游戏信息 → 状态”显示中文动态文本；A/B 显示、自动更新、自动清除已验证。好友列表主行仍只显示游戏名。因此详情展示通路可行，但不满足原计划的主状态行门槛，完整功能开发、Push、PR 继续暂停。**
+
 ## 范围与恢复
 
 沿用阶段一适配层，在游戏主线程手动写入固定文本：
@@ -35,7 +37,7 @@ REA 分析尝试先受沙箱辅助程序编译限制；宿主执行进入 JavaSc
 - Python 启动配置相关 9 项、运行库升级/恢复 4 项测试通过；shuffle-core / lyrics-core / media-core 通过。
 - 完整 Bridge.Tests 两次在 `FlacTests.ProgressiveCancellation` 第 372 行的释放等待中超时（`FLAC test deadline`），第二次为无并行编译的同一产物重跑。这些测试及相关源码与基线没有差异，且该测试项目未编译本次 Presence 源码；原因未定位，不将整套回归记为通过，不在本调查中扩大到 FLAC 修复。
 - 真实游戏 Steam API：A、B 均返回 true，读回一致且无 steam_display；Windows 好友端游戏详情均显示对应文本，B 自动更新由用户确认。
-- Windows 好友列表：A/B 对照均只显示游戏名，不显示测试文字。悬停卡片、好友端清理和精确传播耗时：待验证。
+- Windows 好友列表：A/B 对照均只显示游戏名，不显示测试文字。好友端清理：自动变为空白，用户确认并截图核对。悬停卡片实测、精确传播耗时：NotRun；悬停不显示的判断仅有静态依据。
 - 完整音乐/计时器功能、长期稳定性和 Intel 实机：未执行。
 
 Windows 11 Parallels 虚拟机的独立好友账号已登录，作为观察端；不发送聊天消息，不改观察账号状态或配置。截图含账号资料时仅本机保存，不纳入 Git。
@@ -60,6 +62,12 @@ Mac Steam 重启后，当前 `sp.js` 哈希已变为 `61048fac50966b6a9ba79ec5a4
 
 本机截图：`.local/steam-status-probe-60618f3/screenshots/windows-status-b.png`，SHA-256 `2e3d2c58a8f72bc87245f1ffbbdd88b840a89db8274d3bd90648f06eba2784e8`，不纳入 Git。这里只证明两段固定纯文本可发布和变化，未实现真实曲目与番茄钟数据读取。
 
+### 清理：好友端自动变为空白
+
+2026-10-16 19:40（Asia/Shanghai），用户按要求结束测试并反馈文字自动消失，未手动刷新；游戏日志第 83 行记录恢复完成。随后截图核对 Windows 已打开的游戏信息窗口，“状态”一栏仍在，但内容为空，没有残留 B；游戏名和好友在游戏中的状态正常保留。日志里的“上次发布读回”是历史快照，不表示恢复后仍持有 status。
+
+本机截图：`.local/steam-status-probe-60618f3/screenshots/windows-status-cleared.png`，SHA-256 `4a00429d3fc6b8967588777f66e99dbc5d0fbde4f64bee6ecc07a08b1638a1ee`，不纳入 Git。未单独验证退出游戏时清理，也未测外部游戏写入者竞争；模拟断言不能替代这些实测。
+
 ## 本次受测候选
 
 - 实现提交：`60618f313aec69063b48145e45affea58f07d079`。
@@ -68,7 +76,9 @@ Mac Steam 重启后，当前 `sp.js` 哈希已变为 `61048fac50966b6a9ba79ec5a4
 - 核心运行库摘要：`9d5743f020979d255275bc5728bbc8603e6f62a6cfb15f42e3b1ecc94b73cd1b`；原生音频/媒体库哈希与 ExperienceLayoutCandidate 相同，详见候选 release-manifest。
 - 已验证启动目标切换、arm64 启动预检及 BepInEx/插件加载；Harmony 22/22。未把启动成功计为 Presence API 或好友端验收。
 - 仅复制 BepInEx 配置及主配置；未复制旧 cache/data/logs。原运行目录不变，原启动选项保存在忽略目录 `.local/steam-status-probe-60618f3/switch.json` 及同名 VDF 备份。
-- 本轮测试结束后需正常退出 Mac 游戏与 Steam，再执行恢复；不要在 Steam 运行时直接写 VDF。
+- 本轮测试结束后，用户确认已退出 Mac 游戏与 Steam；恢复工具再次检查两者均不运行，已将 AppID 3548580 的 LaunchOptions 恢复至 `ExperienceLayoutCandidate/launch-core.sh`。读回匹配恢复记录，并以恢复前后文本往返比较确认其他 VDF 字节完全不变；备份及探针候选保留。
+- 旧版 DLL 复核为 `ca2bdc59bc652cf871ca6297499fa48de2c4067127276c9ad10585593b336468`，探针 DLL 仍与受测哈希一致。此次只确认启动配置恢复，未重新启动旧版游戏，不将旧版重启验收记为通过。Steam 保持退出状态。
+- 源码分支保留在本地；没有 Push、PR 或完整功能开发。若以后决定采用“游戏详情状态”作为新目标，需要用户明确确认变更验收范围。
 
 ```sh
 python3 macos/tools/steam_candidate_options.py restore --record .local/steam-status-probe-60618f3/switch.json
