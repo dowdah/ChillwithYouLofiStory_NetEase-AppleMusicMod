@@ -90,12 +90,12 @@ internal sealed class SteamPresenceSettingsPanel : MonoBehaviour
         Toggle(body.transform, "启用 Steam 好友状态", () => _draft.Working.Enabled, v => _draft.Working.Enabled = v);
         Toggle(body.transform, "显示音乐播放状态", () => _draft.Working.ShowMusic, v => _draft.Working.ShowMusic = v);
         Toggle(body.transform, "显示计时器状态", () => _draft.Working.ShowTimer, v => _draft.Working.ShowTimer = v);
-        Toggle(body.transform, "向好友公开当前曲名", () => _draft.Working.ShareTrackTitle, v => _draft.Working.ShareTrackTitle = v);
-        Note(body.transform, "默认关闭且默认不公开曲名。音乐状态和可选曲名在前，计时器在后。保存后生效；预览不会发布，更新有节流及 Steam 传播延迟。", 66f);
+        Toggle(body.transform, "公开曲名和歌手", () => _draft.Working.ShareTrackTitle, v => _draft.Working.ShareTrackTitle = v);
+        Note(body.transform, "默认关闭且不公开曲名和歌手。音乐在前，计时器在后；播放时长度不足先省略计时器。保存后生效，预览不发布。更新有节流及 Steam 传播延迟。", 66f);
         Note(body.transform, "本机预览（当前草稿）", 28f);
         _previewText = Note(body.transform, "", 84f);
         _previewText.richText = false;
-        Note(body.transform, "运行诊断（不包含曲名和账号）", 28f);
+        Note(body.transform, "运行诊断（不包含曲名、歌手和账号）", 28f);
         _diagnosticText = Note(body.transform, "", 170f);
         if (retry != null)
         {

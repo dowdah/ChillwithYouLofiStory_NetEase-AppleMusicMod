@@ -81,7 +81,7 @@ internal static class SteamPresenceService
     }
 
     private static string Format(SteamPresenceOptions options) => SteamPresenceFormatter.Format(new PresenceTextState(
-        _music.State, _music.Title, options.ShowTimer ? _timerText : null, options.ShowMusic, options.ShareTrackTitle));
+        _music.State, _music.Title, options.ShowTimer ? _timerText : null, options.ShowMusic, options.ShareTrackTitle, _music.Artist));
 
     internal static string Preview(SteamPresenceOptions draft)
     {

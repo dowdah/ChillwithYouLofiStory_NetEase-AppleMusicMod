@@ -5,6 +5,7 @@ using MusicBridge;
 internal static class Program
 {
     private const string SecretTitle = "PRIVATE_TRACK_测试";
+    private const string SecretArtist = "PRIVATE_ARTIST_测试";
     private static int _count;
     private static string Status => SteamPresenceApi.Values.TryGetValue("status", out var value) ? value : "";
     private static void Check(bool condition, string label)
@@ -16,7 +17,7 @@ internal static class Program
 
     private static void Main()
     {
-        PlaybackSnapshotService.Snapshot = new PlaybackSnapshot { State = PlaybackState.Playing, Title = SecretTitle };
+        PlaybackSnapshotService.Snapshot = new PlaybackSnapshot { State = PlaybackState.Playing, Title = SecretTitle, Artist = SecretArtist };
         TimerSnapshotService.Snapshot = Running();
         // All external boundaries are fakes; the service, scheduler, formatter and publisher are production code.
         SteamPresenceSettingsStore.ThrowRead = true;
@@ -38,11 +39,13 @@ internal static class Program
         SteamPresenceService.Apply(options); Tick(1);
         Check(Status.StartsWith("音乐播放中 · 番茄钟") && Status.Contains("剩余 24 分钟"), "actual snapshots publish music before timer");
         Check(!Status.Contains(SecretTitle), "private title default omitted from external status");
+        Check(!Status.Contains(SecretArtist), "private artist default omitted from external status");
         string diagnostics = SteamPresenceService.Diagnostics;
         Check(diagnostics.Contains("发布次数：1") && diagnostics.Contains("API 已提交") && !diagnostics.Contains(SecretTitle),
             "diagnostics counts API submission but never includes title");
         var draft = options.Clone(); draft.ShareTrackTitle = true;
         Check(SteamPresenceService.Preview(draft).Contains(SecretTitle), "local-only draft preview can show opted-in title");
+        Check(SteamPresenceService.Preview(draft).Contains(SecretTitle + " — " + SecretArtist), "same draft opt-in previews both names");
         Check(!Status.Contains(SecretTitle) && SteamPresenceApi.WriteCalls == 1, "preview does not apply or publish draft");
         options.Enabled = false; // Caller mutation must not change service copy.
         Check(SteamPresenceService.Enabled, "applied options cloned from caller");
@@ -77,9 +80,11 @@ internal static class Program
         options = new SteamPresenceOptions { Enabled = true, ShareTrackTitle = true, ShowTimer = false };
         SteamPresenceService.Apply(options); Tick(41);
         Check(Status.Contains(SecretTitle) && !Status.Contains("正计时"), "saved title opt-in and timer visibility applied independently");
+        Check(Status.Contains(SecretTitle + " — " + SecretArtist), "saved opt-in routes real snapshot artist into published metadata");
         Check(!SteamPresenceService.Diagnostics.Contains(SecretTitle), "diagnostics stays title-free even when publishing titles");
+        Check(!SteamPresenceService.Diagnostics.Contains(SecretArtist), "diagnostics stays artist-free even when publishing artists");
         SteamPresenceApi.ThrowSet = true;
-        PlaybackSnapshotService.Snapshot = new PlaybackSnapshot { State = PlaybackState.Paused, Title = SecretTitle };
+        PlaybackSnapshotService.Snapshot = new PlaybackSnapshot { State = PlaybackState.Paused, Title = SecretTitle, Artist = SecretArtist };
         Tick(46);
         Check(!SteamPresenceService.Diagnostics.Contains("PRIVATE_EXCEPTION"), "Steam write error remains isolated and redacted");
         SteamPresenceApi.ThrowSet = false; SteamPresenceService.Retry(); Tick(51);
@@ -94,6 +99,11 @@ internal static class Program
         Tick(56);
         Check(Status == "", "disabled cleanup recovers after unexpected clock exception");
         SteamPresenceService.Apply(options); Tick(61);
+        var privateOptions = options.Clone(); privateOptions.ShareTrackTitle = false;
+        SteamPresenceService.Apply(privateOptions); Tick(66);
+        Check(Status == "音乐已暂停" && !Status.Contains(SecretTitle) && !Status.Contains(SecretArtist),
+            "turning metadata privacy back off removes both previously public names");
+        SteamPresenceService.Apply(options); Tick(71);
         SteamPresenceService.Shutdown();
         Check(Status == "" && TimerSnapshotService.ShutdownCalls == 1, "shutdown restores owned status and releases timer service");
         writes = SteamPresenceApi.WriteCalls;
@@ -104,6 +114,8 @@ internal static class Program
             TimerSnapshotService.ShutdownCalls == 1, "shutdown is idempotent and prevents later sampling/publication");
         Check(!SteamPresenceService.Preview(new SteamPresenceOptions { ShareTrackTitle = true }).Contains(SecretTitle),
             "shutdown clears cached private title");
+        Check(!SteamPresenceService.Preview(new SteamPresenceOptions { ShareTrackTitle = true }).Contains(SecretArtist),
+            "shutdown clears cached private artist");
         Console.WriteLine("PASS: " + _count + " presence lifecycle assertions");
     }
 }
@@ -143,7 +155,7 @@ namespace MusicBridge
         }
         internal static string ErrorKind(Exception ex) => ex.GetType().Name;
     }
-    internal struct PlaybackSnapshot { internal PlaybackState State; internal string Title; }
+    internal struct PlaybackSnapshot { internal PlaybackState State; internal string Title, Artist; }
     internal static class PlaybackSnapshotService
     {
         internal static PlaybackSnapshot Snapshot;

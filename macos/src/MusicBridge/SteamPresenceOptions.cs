@@ -14,7 +14,7 @@ internal sealed class SteamPresenceOptions
     public bool Enabled;
     public bool ShowMusic = true;
     public bool ShowTimer = true;
-    public bool ShareTrackTitle;
+    public bool ShareTrackTitle; // Legacy schema-1 key; now explicitly controls both title and artist.
 
     internal SteamPresenceOptions Clone() => new SteamPresenceOptions
     {

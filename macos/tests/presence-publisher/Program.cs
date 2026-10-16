@@ -14,8 +14,8 @@ static class Program
         Console.WriteLine("Presence publisher tests passed: " + assertions);
     }
     static string Text(PlaybackState state, string title = "私密曲名", string timer = null,
-        bool music = true, bool publicTitle = false) =>
-        SteamPresenceFormatter.Format(new PresenceTextState(state, title, timer, music, publicTitle));
+        bool music = true, bool publicTitle = false, string artist = null) =>
+        SteamPresenceFormatter.Format(new PresenceTextState(state, title, timer, music, publicTitle, artist));
     static void Format()
     {
         Check(Text(PlaybackState.Idle) == null, "idle releases");
@@ -39,8 +39,29 @@ static class Program
         string longTitle = string.Concat(System.Linq.Enumerable.Repeat("中🎵😀", 100));
         string formatted = Text(PlaybackState.Playing, longTitle, "正计时 12 分钟", publicTitle: true);
         Check(Encoding.UTF8.GetByteCount(formatted) <= 255, "max bytes");
-        Check(formatted.StartsWith("音乐播放中：") && formatted.EndsWith(" · 正计时 12 分钟"), "long title truncates but both basic states survive");
-        Check(formatted.Contains("… · 正计时 12 分钟"), "title truncation marked before timer");
+        Check(formatted.StartsWith("音乐播放中：") && !formatted.Contains("正计时"), "playing metadata displaces timer when space is insufficient");
+        Check(formatted.EndsWith("…"), "metadata truncation marked after omitting timer");
+        string pausedLong = Text(PlaybackState.Paused, longTitle, "正计时 12 分钟", publicTitle: true);
+        Check(pausedLong.Contains("… · 正计时 12 分钟") && Encoding.UTF8.GetByteCount(pausedLong) <= 255,
+            "paused music keeps timer while truncating metadata");
+        Check(Text(PlaybackState.Playing, artist: "私密歌手") == "音乐播放中", "artist private by default");
+        Check(Text(PlaybackState.Playing, "歌曲", "专注中", publicTitle: true, artist: "歌手") ==
+            "音乐播放中：歌曲 — 歌手 · 专注中", "same opt-in publishes title and artist before timer");
+        Check(Text(PlaybackState.Paused, "歌曲", publicTitle: true, artist: "歌手") == "音乐已暂停：歌曲 — 歌手", "paused artist supported");
+        Check(Text(PlaybackState.Playing, "歌曲", publicTitle: true, artist: "") == "音乐播放中：歌曲", "missing artist has no dangling separator");
+        Check(Text(PlaybackState.Playing, "", publicTitle: true, artist: "歌手") == "音乐播放中：歌手", "artist only is graceful");
+        Check(Text(PlaybackState.Playing, "", publicTitle: true, artist: "") == "音乐播放中", "missing metadata has no colon");
+        Check(Text(PlaybackState.Playing, music: false, publicTitle: true, artist: "私密歌手") == null, "music off hides both names");
+        Check(Text(PlaybackState.Loading, publicTitle: true, artist: "私密歌手") == "音乐缓冲中", "loading hides stale artist");
+        Check(Text(PlaybackState.Failed, publicTitle: true, artist: "私密歌手") == "音乐播放失败", "failed hides stale artist");
+        Check(Text(PlaybackState.Idle, publicTitle: true, artist: "私密歌手") == null, "idle hides stale artist");
+        Check(Text(PlaybackState.Playing, "歌曲", publicTitle: true, artist: "A\n\0\u202eB") == "音乐播放中：歌曲 — AB", "artist controls removed");
+        string bothLong = Text(PlaybackState.Playing, longTitle, "休息中", publicTitle: true, artist: longTitle);
+        Check(bothLong.Contains("… — ") && bothLong.EndsWith("…") && !bothLong.Contains("休息中") &&
+            Encoding.UTF8.GetByteCount(bothLong) <= 255, "long title and artist both retain fragments within byte cap");
+        string timerDropped = Text(PlaybackState.Playing, new string('中', 65), new string('休', 30), publicTitle: true, artist: "歌手");
+        Check(!timerDropped.Contains("休") && !timerDropped.Contains("…") && timerDropped.EndsWith(" — 歌手"),
+            "drop timer before unnecessarily truncating music metadata");
         Check(Text(PlaybackState.Failed, timer: "专注中", publicTitle: true) == "音乐播放失败 · 专注中", "failure retains music priority without title");
         string longTimer = Text(PlaybackState.Playing, timer: new string('中', 200));
         Check(longTimer.StartsWith("音乐播放中 · ") && Encoding.UTF8.GetByteCount(longTimer) <= 255,

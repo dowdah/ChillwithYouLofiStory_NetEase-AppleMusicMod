@@ -7,13 +7,13 @@ namespace MusicBridge;
 internal readonly struct PresenceTextState
 {
     internal readonly PlaybackState MusicState;
-    internal readonly string Title, TimerText;
+    internal readonly string Title, Artist, TimerText;
     internal readonly bool ShowMusic, ShowTitle;
-    internal PresenceTextState(PlaybackState musicState, string title, string timerText, bool showMusic, bool showTitle)
-    { MusicState = musicState; Title = title; TimerText = timerText; ShowMusic = showMusic; ShowTitle = showTitle; }
+    internal PresenceTextState(PlaybackState musicState, string title, string timerText, bool showMusic, bool showTitle, string artist = null)
+    { MusicState = musicState; Title = title; Artist = artist; TimerText = timerText; ShowMusic = showMusic; ShowTitle = showTitle; }
 }
 
-// Music is presented first. Preserve basic music/timer states before spending bytes on a public title.
+// Music first. Public metadata is opt-in; playing music can displace the timer when space is insufficient.
 internal static class SteamPresenceFormatter
 {
     internal const int MaxUtf8Bytes = 255;
@@ -32,15 +32,38 @@ internal static class SteamPresenceFormatter
         const string sectionSeparator = " · ";
         timer = Truncate(timer, MaxUtf8Bytes - Encoding.UTF8.GetByteCount(music + sectionSeparator));
         string timerSuffix = timer.Length == 0 ? "" : sectionSeparator + timer;
-        // Never show a stale title for idle/failed/loading state or when music visibility is disabled.
-        string title = state.ShowMusic && state.ShowTitle &&
-            (state.MusicState == PlaybackState.Playing || state.MusicState == PlaybackState.Paused)
-            ? Sanitize(state.Title) : "";
-        if (title.Length == 0) return music + timerSuffix;
+        // Never show stale metadata for idle/failed/loading state or when music visibility is disabled.
+        bool share = state.ShowMusic && state.ShowTitle &&
+            (state.MusicState == PlaybackState.Playing || state.MusicState == PlaybackState.Paused);
+        string title = share ? Sanitize(state.Title) : "";
+        string artist = share ? Sanitize(state.Artist) : "";
+        string metadata = JoinMetadata(title, artist);
+        if (metadata.Length == 0) return music + timerSuffix;
         const string separator = "：";
+        if (state.MusicState == PlaybackState.Playing &&
+            Encoding.UTF8.GetByteCount(music + separator + metadata + timerSuffix) > MaxUtf8Bytes)
+            timerSuffix = "";
         int remaining = MaxUtf8Bytes - Encoding.UTF8.GetByteCount(music + separator + timerSuffix);
-        string publicTitle = remaining <= 0 ? "" : Truncate(title, remaining);
-        return music + (publicTitle.Length == 0 ? "" : separator + publicTitle) + timerSuffix;
+        string publicMetadata = FitMetadata(title, artist, remaining);
+        return music + (publicMetadata.Length == 0 ? "" : separator + publicMetadata) + timerSuffix;
+    }
+
+    private const string ArtistSeparator = " — ";
+    private static string JoinMetadata(string title, string artist) =>
+        title.Length > 0 && artist.Length > 0 ? title + ArtistSeparator + artist : title + artist;
+
+    private static string FitMetadata(string title, string artist, int bytes)
+    {
+        string full = JoinMetadata(title, artist);
+        if (title.Length == 0 || artist.Length == 0 || Encoding.UTF8.GetByteCount(full) <= bytes)
+            return Truncate(full, bytes);
+        int available = bytes - Encoding.UTF8.GetByteCount(ArtistSeparator);
+        if (available < 6) return Truncate(full, bytes);
+        // Retain a visible fragment of both names rather than allowing a long title to erase the artist.
+        int artistBytes = Math.Min(Encoding.UTF8.GetByteCount(artist), available / 2);
+        int titleBytes = Math.Min(Encoding.UTF8.GetByteCount(title), available - artistBytes);
+        artistBytes = available - titleBytes;
+        return Truncate(title, titleBytes) + ArtistSeparator + Truncate(artist, artistBytes);
     }
 
     internal static string Sanitize(string value)
