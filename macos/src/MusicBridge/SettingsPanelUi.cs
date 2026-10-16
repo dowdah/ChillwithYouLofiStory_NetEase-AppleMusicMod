@@ -39,6 +39,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
     private TextMeshProUGUI _mediaStatus;
     private float _nextMediaAt;
     private TextMeshProUGUI _diagnosticsStatus;
+    private TextMeshProUGUI _steamProbeStatus;
     private float _nextDiagnosticsAt;
     private GameObject _repairConfirmation;
 
@@ -292,6 +293,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
                 "；清理：" + (AudioDiskCache.CleanupActive ? "进行中" : "空闲") +
                 "；媒体：" + SystemMediaService.StatusText;
             if (_diagnosticsStatus.text != status) _diagnosticsStatus.text = status;
+            if (_steamProbeStatus != null) _steamProbeStatus.text = SteamPresenceProbeService.StatusText;
         }
         if (Input.GetKeyDown(KeyCode.Escape))
         {
@@ -384,6 +386,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
                 UiKit.CreatePillButton(_content.transform, "修复游戏声音", false, UiKit.LineColor, 30f, 150f)
                     .onClick.AddListener(AudioOutputRecovery.RequestManual);
                 BuildDiagnosticsExport();
+                BuildSteamPresenceProbe();
                 BuildExplicitRepair();
                 break;
         }
@@ -395,6 +398,23 @@ internal sealed class SettingsPanelUi : MonoBehaviour
     {
         try { System.Diagnostics.Process.Start("/usr/bin/open", path); }
         catch (Exception ex) { _status.text = "无法打开目录（" + ex.GetType().Name + "）"; }
+    }
+
+    private void BuildSteamPresenceProbe()
+    {
+        Note("Steam 好友状态能力探针：只读检查不会发布。测试 A/B 会公开固定测试文本，最多持续 120 秒。没有已确认来源的本游戏模板时禁止发布。");
+        _steamProbeStatus = UiKit.CreateText(_content.transform, SteamPresenceProbeService.StatusText, 12f, TextAnchor.UpperLeft);
+        WrapBody(_steamProbeStatus, 120f);
+        UiKit.CreatePillButton(_content.transform, "只读检查 Steam", false, UiKit.LineColor, 30f, 180f)
+            .onClick.AddListener(SteamPresenceProbeService.Inspect);
+        var first = UiKit.CreatePillButton(_content.transform, "发布固定测试 A", false, UiKit.LineColor, 30f, 180f);
+        first.interactable = SteamPresenceProbeService.CanPublish;
+        first.onClick.AddListener(SteamPresenceProbeService.PublishA);
+        var second = UiKit.CreatePillButton(_content.transform, "发布固定测试 B", false, UiKit.LineColor, 30f, 180f);
+        second.interactable = SteamPresenceProbeService.CanPublish;
+        second.onClick.AddListener(SteamPresenceProbeService.PublishB);
+        UiKit.CreatePillButton(_content.transform, "结束测试并恢复", false, UiKit.LineColor, 30f, 180f)
+            .onClick.AddListener(SteamPresenceProbeService.Stop);
     }
 
     private void BuildDiagnosticsExport()
