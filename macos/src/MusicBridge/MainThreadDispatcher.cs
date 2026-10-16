@@ -57,6 +57,7 @@ internal class MainThreadDispatcher : MonoBehaviour
 		lock (QueueLock) Queue.Clear();
 		BridgeLog.Info("游戏正在退出，停止所有后台轮询。");
 		SteamPresenceProbeService.Shutdown();
+		SteamPresenceService.Shutdown();
 		NeteaseService.Shutdown();
 		AppleMusicService.Shutdown();
 		SystemMediaService.Shutdown();
@@ -75,6 +76,7 @@ internal class MainThreadDispatcher : MonoBehaviour
 		BridgePanel.TickAlways();
         SystemMediaService.Tick();
         SteamPresenceProbeService.Tick();
+        SteamPresenceService.Tick();
         NeteaseRuntime.Fm.Tick(!AudioOutputRecovery.OutputUnavailable);
 		while (true)
 		{

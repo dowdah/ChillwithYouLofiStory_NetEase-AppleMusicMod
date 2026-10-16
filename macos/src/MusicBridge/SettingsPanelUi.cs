@@ -45,6 +45,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
 
     internal static void Open(Transform from, int page = 0)
     {
+        if (SteamPresenceSettingsPanel.FocusIfOpen()) return;
         if (_instance != null)
         {
             _instance.gameObject.SetActive(true);
@@ -293,7 +294,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
                 "；清理：" + (AudioDiskCache.CleanupActive ? "进行中" : "空闲") +
                 "；媒体：" + SystemMediaService.StatusText;
             if (_diagnosticsStatus.text != status) _diagnosticsStatus.text = status;
-            if (_steamProbeStatus != null) _steamProbeStatus.text = SteamPresenceProbeService.StatusText;
+            if (_steamProbeStatus != null) _steamProbeStatus.text = SteamPresenceService.Diagnostics;
         }
         if (Input.GetKeyDown(KeyCode.Escape))
         {
@@ -372,6 +373,9 @@ internal sealed class SettingsPanelUi : MonoBehaviour
                 UiKit.CreatePillButton(_content.transform, "重试加载桥接", false, UiKit.LineColor, 30f, 150f)
                     .onClick.AddListener(SystemMediaService.Retry);
                 Note("当前原型只代理网易云。Apple Music 的系统会话仍由 Music.app 管理；本地音乐待实机验证。 ");
+                UiKit.CreatePillButton(_content.transform, "Steam 好友状态", false, UiKit.LineColor, 32f, 190f)
+                    .onClick.AddListener(OpenSteamPresenceSettings);
+                Note("独立配置，默认关闭；仅在好友的“游戏信息”详情中显示，不依赖系统媒体控制开关。");
                 break;
             default:
                 Note("配置来源：" + MusicBridgeOptions.Source);
@@ -402,24 +406,23 @@ internal sealed class SettingsPanelUi : MonoBehaviour
 
     private void BuildSteamPresenceProbe()
     {
-        Note("Steam 好友状态能力探针：只读检查不会发布。测试 A/B 会公开固定测试文本，最多持续 120 秒。没有已确认来源的本游戏模板时禁止发布。");
-        _steamProbeStatus = UiKit.CreateText(_content.transform, SteamPresenceProbeService.StatusText, 12f, TextAnchor.UpperLeft);
-        WrapBody(_steamProbeStatus, 120f);
-        UiKit.CreatePillButton(_content.transform, "只读检查 Steam", false, UiKit.LineColor, 30f, 180f)
-            .onClick.AddListener(SteamPresenceProbeService.Inspect);
-        var first = UiKit.CreatePillButton(_content.transform, "发布固定测试 A", false, UiKit.LineColor, 30f, 180f);
-        first.interactable = SteamPresenceProbeService.CanPublish;
-        first.onClick.AddListener(SteamPresenceProbeService.PublishA);
-        var second = UiKit.CreatePillButton(_content.transform, "发布固定测试 B", false, UiKit.LineColor, 30f, 180f);
-        second.interactable = SteamPresenceProbeService.CanPublish;
-        second.onClick.AddListener(SteamPresenceProbeService.PublishB);
-        Note("纯文本 status 实验：只设置 status，不添加或清除 steam_display。下方为固定测试内容，不读取真实曲名或计时器。好友请分别查看列表、悬停卡片和“查看游戏信息”。");
-        UiKit.CreatePillButton(_content.transform, "status 音乐测试 A", false, UiKit.LineColor, 30f, 210f)
-            .onClick.AddListener(SteamPresenceProbeService.PublishStatusA);
-        UiKit.CreatePillButton(_content.transform, "status 计时器测试 B", false, UiKit.LineColor, 30f, 210f)
-            .onClick.AddListener(SteamPresenceProbeService.PublishStatusB);
-        UiKit.CreatePillButton(_content.transform, "结束测试并恢复", false, UiKit.LineColor, 30f, 180f)
-            .onClick.AddListener(SteamPresenceProbeService.Stop);
+        Note("Steam 好友状态诊断（不含曲名）：固定 A/B 探针仅保留于历史调查候选，本版本不提供试写入口。");
+        _steamProbeStatus = UiKit.CreateText(_content.transform, SteamPresenceService.Diagnostics, 12f, TextAnchor.UpperLeft);
+        WrapBody(_steamProbeStatus, 200f);
+        UiKit.CreatePillButton(_content.transform, "Steam 好友状态设置", false, UiKit.LineColor, 30f, 210f)
+            .onClick.AddListener(OpenSteamPresenceSettings);
+    }
+
+    private void OpenSteamPresenceSettings()
+    {
+        if (_saving) { _status.text = "请等待主设置保存完成，再打开独立设置。"; return; }
+        if (!JToken.DeepEquals(_working, _baseline.Json) || _invalidFields.Count != 0)
+        { _status.text = "主设置有未保存修改，请先保存，或取消并放弃修改后重新打开 Steam 好友状态。"; return; }
+        if (SteamPresenceService.Store == null) { _status.text = "Steam 状态模块未初始化，请查看诊断。"; return; }
+        SteamPresenceSettingsPanel.Open(_canvasRect, SteamPresenceService.Store, SteamPresenceService.Apply,
+            SteamPresenceService.Preview, () => SteamPresenceService.Diagnostics, SteamPresenceService.Retry);
+        gameObject.SetActive(false);
+        Close();
     }
 
     private void BuildDiagnosticsExport()
@@ -438,6 +441,7 @@ internal sealed class SettingsPanelUi : MonoBehaviour
                 var report = new JObject
                 {
                     ["PluginVersion"] = Plugin.PluginVersion,
+                    ["SteamPresence"] = SteamPresenceService.Diagnostics,
                     ["SchemaVersion"] = MusicBridgeOptions.Current.SchemaVersion,
                     ["ConfigWritable"] = MusicBridgeOptions.CanSave,
                     ["settings_revision"] = revision,
