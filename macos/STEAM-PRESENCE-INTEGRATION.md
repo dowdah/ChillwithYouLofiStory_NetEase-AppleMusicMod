@@ -136,6 +136,7 @@ python3 macos/tools/steam_candidate_options.py restore --record .local/steam-pre
 - 尚未在游戏中验证低音量/静音跨重启、首声播放音量及 UI 读回；需新哈希候选。此前 458a0a9 的用户验收作为历史证据保留，不冒充新 DLL 已验收。运行中候选未替换，未 Push/PR。
 - 已准备独立 `SteamPresenceCandidate-54b443d`：源码 `54b443d24631d0e9d9d3c91848c94c04b4618f5a`，DLL SHA-256 `bf2dec86bf49e8829f903d230acd971f922d0657e88d3fc056a1bd63b4fe986d`，打包时源码工作区干净，arm64 启动预检通过。复用已验运行库和前候选必要配置，无缓存/运行数据；尚未切换启动选项。等待用户正常退出后，刷新必要配置副本再建立独立恢复记录，保留 458a0a9 和原 ExperienceLayoutCandidate。
 - 用户随后明确确认 Mac 游戏与 Steam 已退出并允许切换。主机进程检查通过后刷新必要配置副本，arm64 预检再次通过；先恢复 ExperienceLayoutCandidate，再切换并读回为 `SteamPresenceCandidate-54b443d/launch-core.sh`。DLL 哈希复核不变；独立恢复记录 `.local/steam-presence-candidate-54b443d/switch.json` 与同名 VDF 备份均为 0600，可直接回退至 ExperienceLayoutCandidate。旧目录未覆盖，尚未启动修复版或宣称音量实机验收通过。
+- 用户按低音量设置、正常退出游戏、重新从 Steam 启动并播放网易云的步骤操作后，明确确认音量滑块与实际音量均保持之前的低音量，没有恢复到 70%。当前候选低音量跨重启恢复通过（用户直接观察反馈），本轮复核 DLL 哈希仍为 `bf2dec86…fe986d`。不将此结果扩展为静音值、立即退出、Steam 状态退出清理或全部最终验收通过；静音跨重启待补查。
 
 音量修复候选当前回退命令（先正常退出 Mac 游戏和 Steam）：
 
