@@ -113,6 +113,13 @@ python3 macos/tools/steam_candidate_options.py restore --record .local/steam-pre
 python3 macos/tools/steam_candidate_options.py restore --record .local/steam-presence-candidate-458a0a9/switch.json
 ```
 
+候选 458a0a9 的曲名与歌手实机验收进展（用户确认）：
+
+- 用户先在发布关闭时操作隐私开关草稿，确认本地预览正常显示曲名和歌手。
+- 随后按步骤启用并保存，用户确认 Windows 独立好友账号的“查看游戏信息”能正常显示曲名和歌手，换歌后也能自动更新。
+- 本轮核对候选 DLL 哈希仍为上述 `0da12526…e18e78`。以上显示与更新结论来自用户直接观察反馈，本轮未独立截屏、未记录真实歌曲或账号信息，未测量具体传播延迟；不扩大为所有音源、暂停、清除或完整最终验收通过。
+- 下一步验证保存关闭“公开曲名和歌手”后两项信息消失但基本音乐状态保留，以及禁用整个功能后的状态清理。其余待验场景不因本轮通过而自动标记完成，仍未 Push/PR。
+
 60 分钟长稳及 Intel 实机按原约定为 NotRun，不扩充交付门槛。任何功能代码修复须新候选并重验受影响场景；纯文档提交不改变受测 DLL，记录其对应实现提交。
 
 最终用户确认通过前不 Push、不 PR。PR 面向 origin/main，仓库 `dowdah/ChillwithYouLofiStory_NetEase-AppleMusicMod`；创建后关联当前任务，检查远端 CI，不自动合并。
