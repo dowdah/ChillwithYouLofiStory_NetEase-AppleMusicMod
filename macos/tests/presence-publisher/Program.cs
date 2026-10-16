@@ -27,14 +27,24 @@ static class Program
         Check(Text(PlaybackState.Playing, publicTitle: true) == "音乐播放中：私密曲名", "title explicit opt-in");
         Check(Text(PlaybackState.Loading, publicTitle: true) == "音乐缓冲中", "no stale loading title");
         Check(Text(PlaybackState.Failed, publicTitle: true) == "音乐播放失败", "no stale failed title");
-        Check(Text(PlaybackState.Playing, timer: "专注中，剩余 24 分钟") == "专注中，剩余 24 分钟 · 音乐播放中", "timer first");
+        Check(Text(PlaybackState.Playing, timer: "专注中，剩余 24 分钟") == "音乐播放中 · 专注中，剩余 24 分钟", "music first while title private");
+        Check(Text(PlaybackState.Playing, timer: "专注中，剩余 24 分钟", publicTitle: true) ==
+            "音乐播放中：私密曲名 · 专注中，剩余 24 分钟", "opted-in title stays with music before timer");
+        Check(Text(PlaybackState.Paused, timer: "正计时已暂停", publicTitle: true) ==
+            "音乐已暂停：私密曲名 · 正计时已暂停", "paused music retains priority");
+        Check(Text(PlaybackState.Loading, timer: "休息中", publicTitle: true) == "音乐缓冲中 · 休息中", "loading first without stale title");
+        Check(Text(PlaybackState.Playing, timer: "专注中", music: false, publicTitle: true) == "专注中", "music disabled leaves timer only");
         Check(Text(PlaybackState.Idle, timer: "计时完成") == "计时完成", "timer without music");
         Check(Text(PlaybackState.Paused, "a\n\r\0\t\u202e\u2028\ud800b\udc00", publicTitle: true) == "音乐已暂停：ab", "remove unsafe text");
         string longTitle = string.Concat(System.Linq.Enumerable.Repeat("中🎵😀", 100));
         string formatted = Text(PlaybackState.Playing, longTitle, "正计时 12 分钟", publicTitle: true);
         Check(Encoding.UTF8.GetByteCount(formatted) <= 255, "max bytes");
-        Check(formatted.StartsWith("正计时 12 分钟 · 音乐播放中："), "title truncates first");
-        Check(formatted.EndsWith("…"), "truncation marked");
+        Check(formatted.StartsWith("音乐播放中：") && formatted.EndsWith(" · 正计时 12 分钟"), "long title truncates but both basic states survive");
+        Check(formatted.Contains("… · 正计时 12 分钟"), "title truncation marked before timer");
+        Check(Text(PlaybackState.Failed, timer: "专注中", publicTitle: true) == "音乐播放失败 · 专注中", "failure retains music priority without title");
+        string longTimer = Text(PlaybackState.Playing, timer: new string('中', 200));
+        Check(longTimer.StartsWith("音乐播放中 · ") && Encoding.UTF8.GetByteCount(longTimer) <= 255,
+            "even oversized timer never displaces music state");
         var strict = new UTF8Encoding(false, true);
         Check(strict.GetString(strict.GetBytes(formatted)) == formatted, "well formed UTF16");
         for (int i = 1; i <= 20; i++)

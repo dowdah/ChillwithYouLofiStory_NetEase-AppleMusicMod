@@ -13,7 +13,7 @@ internal readonly struct PresenceTextState
     { MusicState = musicState; Title = title; TimerText = timerText; ShowMusic = showMusic; ShowTitle = showTitle; }
 }
 
-// Pure, privacy-first formatting. The optional title is always the first content to be truncated.
+// Music is presented first. Preserve basic music/timer states before spending bytes on a public title.
 internal static class SteamPresenceFormatter
 {
     internal const int MaxUtf8Bytes = 255;
@@ -28,18 +28,19 @@ internal static class SteamPresenceFormatter
             PlaybackState.Failed => "音乐播放失败",
             _ => ""
         };
-        string basis = timer.Length > 0 && music.Length > 0 ? timer + " · " + music : timer + music;
-        if (basis.Length == 0) return null;
+        if (music.Length == 0) return timer.Length == 0 ? null : Truncate(timer, MaxUtf8Bytes);
+        const string sectionSeparator = " · ";
+        timer = Truncate(timer, MaxUtf8Bytes - Encoding.UTF8.GetByteCount(music + sectionSeparator));
+        string timerSuffix = timer.Length == 0 ? "" : sectionSeparator + timer;
         // Never show a stale title for idle/failed/loading state or when music visibility is disabled.
         string title = state.ShowMusic && state.ShowTitle &&
             (state.MusicState == PlaybackState.Playing || state.MusicState == PlaybackState.Paused)
             ? Sanitize(state.Title) : "";
-        basis = Truncate(basis, MaxUtf8Bytes);
-        if (title.Length == 0) return basis;
+        if (title.Length == 0) return music + timerSuffix;
         const string separator = "：";
-        int remaining = MaxUtf8Bytes - Encoding.UTF8.GetByteCount(basis + separator);
-        string suffix = remaining <= 0 ? "" : Truncate(title, remaining);
-        return suffix.Length == 0 ? basis : basis + separator + suffix;
+        int remaining = MaxUtf8Bytes - Encoding.UTF8.GetByteCount(music + separator + timerSuffix);
+        string publicTitle = remaining <= 0 ? "" : Truncate(title, remaining);
+        return music + (publicTitle.Length == 0 ? "" : separator + publicTitle) + timerSuffix;
     }
 
     internal static string Sanitize(string value)

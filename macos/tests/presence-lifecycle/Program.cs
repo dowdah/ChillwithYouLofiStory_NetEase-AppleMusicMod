@@ -36,7 +36,7 @@ internal static class Program
         Check(PlaybackSnapshotService.CaptureCalls == 1, "wrapper throttles local sampling to one second");
         var options = new SteamPresenceOptions { Enabled = true };
         SteamPresenceService.Apply(options); Tick(1);
-        Check(Status.Contains("剩余 24 分钟") && Status.Contains("音乐播放中"), "actual snapshots aggregate into published status");
+        Check(Status.StartsWith("音乐播放中 · 番茄钟") && Status.Contains("剩余 24 分钟"), "actual snapshots publish music before timer");
         Check(!Status.Contains(SecretTitle), "private title default omitted from external status");
         string diagnostics = SteamPresenceService.Diagnostics;
         Check(diagnostics.Contains("发布次数：1") && diagnostics.Contains("API 已提交") && !diagnostics.Contains(SecretTitle),
