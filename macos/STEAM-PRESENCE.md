@@ -4,9 +4,9 @@
 
 ## 当前结论与阶段门槛
 
-**阶段一探针已实现。2026-10-16 已登录 Steam 协议接口查询成功：AppID 3548580 的英文和简体中文均返回空模板列表；同一连接的 HOI4 对照返回有效模板。好友列表显示验收未执行。**
+**阶段一探针已实现。2026-10-16 已登录 Steam 协议接口对 AppID 3548580 的全部 31 个官方 API 语言代码逐项查询成功，包括日文，模板列表全部为空；同一连接的 HOI4 对照返回有效模板。好友列表显示验收未执行。**
 
-本次已取得服务端空结果，不再只是网页无法访问或匿名权限不足；结论限于此次英文和简体中文查询，不外推其他语言、未发布配置或未来状态。按用户确认的计划，缺少可复用模板时停止音乐/计时器完整开发，不改为详情显示，不 Push、不创建 PR。现有 Steam 启动目标、已验收运行目录及配置未改动；因此无需恢复启动选项。源码插件版本仍为 1.5.0.0，只有完整功能进入交付才升级到 1.6.0.0。本探针不作为新版正式发行。
+本次已取得服务端空结果，不再只是网页无法访问或匿名权限不足；结论限于此次普通已登录账号可查询的已发布数据，不外推开发者未发布配置或未来状态。按用户确认的计划，缺少可复用模板时停止音乐/计时器完整开发，不改为详情显示，不 Push、不创建 PR。现有 Steam 启动目标、已验收运行目录及配置未改动；因此无需恢复启动选项。源码插件版本仍为 1.5.0.0，只有完整功能进入交付才升级到 1.6.0.0。本探针不作为新版正式发行。
 
 ## 静态调查证据
 
@@ -66,6 +66,31 @@ dotnet run --project tools/presence-inspect -- '/absolute/path/to/Managed/com.rl
 
 方法实现依据：[node-steam-user friends.js](https://github.com/DoctorMcKay/node-steam-user/blob/master/components/friends.js)，实际执行固定 npm 版本 5.3.0 的同名实现。查询时保留并检查响应头 EResult 和响应 AppID，而非只看包装 API 的 tokens 输出。
 
+### 全语言复查：2026-10-16 18:57（Asia/Shanghai）
+
+用户再次扫码批准临时查询，沿用相同方法和固定版本客户端。依据 [Steam 官方 API 语言代码表](https://partner.steamgames.com/doc/store/localization/languages)，先请求 HOI4 英文作为阳性对照，再依次请求本游戏全部 31 种语言（每次请求之间间隔 200ms）。
+
+日文请求在 18:57:04 返回 `EResult=1`、`responseAppId=3548580`、`tokenLists=[]`。全部 31 个请求均成功且 AppID 匹配，没有超时、权限错误或漏项，所有 `tokenLists` 都为空。HOI4 同一会话依然返回 `#PlayingAs`。
+
+完整请求语言集合：
+
+```text
+japanese, tchinese, koreana, russian, brazilian, portuguese, english, schinese,
+arabic, bulgarian, czech, danish, dutch, finnish, french, german, greek, hungarian,
+indonesian, italian, malay, norwegian, polish, romanian, spanish, latam, swedish,
+thai, turkish, ukrainian, vietnamese
+```
+
+逐请求的 UTC 时间、返回码、响应 AppID 和模板列表见 [非敏感协议响应记录](evidence/steam-presence-localization-2026-10-16.json)。记录不包含用户标识、二维码、账号令牌或会话头。查询程序已退出（退出码 0），临时二维码已删除。
+
+### 没有开发者权限时能否自定义模板
+
+通过 Steam 支持的机制，模板由拥有该 AppID 管理权限的开发者在 Steamworks 后台上传并发布；`SetRichPresence` 设置的是用户运行时键值，不是模板定义。普通玩家可以填充已有模板参数，但不能靠把 `steam_display` 设为新名字而注册一个新模板。
+
+修改自己客户端的本地文本或显示逻辑，只能改变被修改客户端的解释方式，不能把本 AppID 的新模板分发给未修改的好友客户端。使用自己控制的另一个 AppID，则属于另一个应用的状态，不能算本游戏的模板。`status` 纯文本是另一种显示途径，不等于创建模板；若改为研究它的实际客户端显示行为，需要另行调整当前不自动降级的功能范围。
+
+这些是受支持接口和当前查询证据所限定的结论，不声称穷尽非公开协议或未验证的客户端行为。
+
 ## 已实现的探针行为
 
 源码构建后，入口为“音乐设置 → 诊断 → Steam 好友状态能力探针”。本轮未安装到游戏，现用版本不会出现该入口。
@@ -90,7 +115,7 @@ dotnet run --project tools/presence-inspect -- '/absolute/path/to/Managed/com.rl
 | Python 工具测试 | 11 项通过；只在临时目录模拟既有安装/回滚逻辑 |
 | git diff --check | Pass |
 | 探针游戏 Mono/UI/Steam 真实调用 | NotRun |
-| 已登录客户端协议本地化查询 | Pass：HOI4 有模板，本游戏 english/schinese 均为 OK + 匹配 AppID + 空 token_lists |
+| 已登录客户端协议本地化查询 | Pass：HOI4 有模板，本游戏全部 31 个官方 API 语言代码均为 OK + 匹配 AppID + 空 token_lists |
 | 好友列表 A/B 与恢复验收 | NotRun：本次查询未返回可用模板 |
 | 音乐/计时器集成、独立配置、完整候选部署 | 尚未开始，受阶段一门槛约束 |
 
@@ -111,6 +136,6 @@ dotnet run --project tests/media-core
 
 ## 恢复工作的必要证据
 
-需要取得 **AppID 3548580 自己新增或此前未覆盖的有效 token、本地化模板文本及占位参数**。当前中英文查询为空；可以在开发者发布模板后复查，或在有具体其他语言证据时补充定向查询。仅重复登录、启动游戏或确认“包含 Steamworks.NET”不足以解除门槛。
+需要取得 **AppID 3548580 自己新增的有效 token、本地化模板文本及占位参数**。当前全部 31 个官方 API 语言代码查询均为空；可以在开发者发布模板或出现明确新证据后复查。仅重复登录、启动游戏或确认“包含 Steamworks.NET”不足以解除门槛。
 
 有证据后，在同一功能分支录入匹配模板，构建独立探针候选，完成好友端 A/B 更新与恢复；用户确认该阶段通过之后，才进入音乐/计时器接入。不要因 SDK 返回 true 而自动跨过验收门槛。
