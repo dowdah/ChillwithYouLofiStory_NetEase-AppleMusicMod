@@ -59,7 +59,11 @@ python3 macos/tools/steam_candidate_options.py restore --record .local/steam-pre
 
 使用 `macos/dist/SteamPresenceCandidate-<commit>`，固定复用 ExperienceLayoutCandidate 已验证运行库及原生库，独立清单记录源码、主配置/Presence schema、游戏程序集和库哈希。仅复制必要配置；不复制旧缓存/日志/运行数据，不使用硬编码 ChillMusicMac 的升级工具。原目录保留，切换使用独立备份记录及原值冲突校验。
 
-本次真实验收尚未开始，以下均 Pending：
+2026-10-16 22:33（Asia/Shanghai）首批只读运行观察：候选 1.6.0.0 已加载；独立设置界面确认启用关闭、曲名公开关闭。诊断显示 Steam 已就绪、发布次数 0、最后成功无、最近错误无；番茄钟与正计时均已观察到真实实例。当前无活动计时器，快照为 Pomodoro/Idle/None，已过与剩余均为 0，预览无可展示内容。此处证明实例绑定和默认不发布，不代表运行/暂停/阶段时间语义已验收。本机证据 `.local/steam-presence-candidate-67d54dd/screenshots/disabled-idle.png`，不纳入 Git。
+
+完整验收进行中，以下场景仍 Pending：
+
+22:35–22:36 首次正计时暂停观察：用户完成运行后暂停，游戏显示暂停及 `00:00:10`，快照为 `Countup/Paused/Break`，预览“正计时（已暂停）· 已过 0 分钟”，发布 0、无错误。两次截图之间包含显式 8 秒等待，游戏与诊断读数均未增长，确认暂停识别和冻结。诊断显示整数 11 而游戏为 10，源码发现诊断用 `ToString("0")` 四舍五入，不能把本次秒数一致性标为通过。源码已改为保留三位小数并新增回归断言，presence-lifecycle 33 项通过（新增采样使假时钟前进一秒，测试中的恢复检查同步调整至完整 5 秒退避之后）；运行中的 67d54dd 候选未热替换，后续需新候选复验此项。截图 `countup-paused-first.png`、`countup-paused-later.png` 在同一忽略证据目录。运行态本身仅有用户操作确认，尚未单独捕获运行态画面。
 
 1. 默认关闭时的只读诊断：番茄钟工作/休息/暂停/完成、正计时开始/暂停/停止与游戏秒数一致；场景实例失效后重新绑定。
 2. 网易云队列/FM、Apple Music、游戏自带/导入音乐换歌与暂停；浏览其他音源页面不切换实际显示；缓冲、快速切歌和剧情让路不残留旧曲名。

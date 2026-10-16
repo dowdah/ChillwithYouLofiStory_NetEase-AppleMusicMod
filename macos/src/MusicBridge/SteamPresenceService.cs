@@ -31,8 +31,8 @@ internal static class SteamPresenceService
         (string.IsNullOrEmpty(_store?.Error) ? "" : "\n" + _store.Error);
     private static string TimerDiagnostic => !_timer.Available ? "当前计时器：不可用/等待场景实例" :
         "当前计时器：" + _timer.Mode + "/" + _timer.State + "/" + _timer.Phase +
-        "；已过秒：" + _timer.ElapsedSeconds.ToString("0", CultureInfo.InvariantCulture) +
-        "；剩余秒：" + (_timer.RemainingSeconds?.ToString("0", CultureInfo.InvariantCulture) ?? "无");
+        "；已过秒：" + _timer.ElapsedSeconds.ToString("0.000", CultureInfo.InvariantCulture) +
+        "；剩余秒：" + (_timer.RemainingSeconds?.ToString("0.000", CultureInfo.InvariantCulture) ?? "无");
 
     internal static void Initialize(Harmony harmony)
     {

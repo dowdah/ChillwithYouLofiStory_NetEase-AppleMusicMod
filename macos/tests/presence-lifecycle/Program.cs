@@ -61,11 +61,15 @@ internal static class Program
             PresenceTimerPhase.None, 189, null, 2); Tick(26);
         Check(Status.Contains("正计时（已暂停）") && Status.Contains("已过 3 分钟") && !Status.Contains("计时完成"),
             "new scene epoch rebind uses new timer without old completion");
+        TimerSnapshotService.Snapshot = new TimerSnapshot(true, PresenceTimerMode.Countup, PresenceTimerState.Paused,
+            PresenceTimerPhase.Break, 10.75, null, 2); Tick(27);
+        Check(SteamPresenceService.Diagnostics.Contains("已过秒：10.750"),
+            "timer diagnostics retain fractional seconds instead of rounding to misleading whole second");
 
         SteamPresenceApi.Connected = false;
         SteamPresenceService.Apply(new SteamPresenceOptions());
         Check(!SteamPresenceService.Enabled && Status.Length > 0, "offline disable does not claim immediate successful cleanup");
-        SteamPresenceApi.Connected = true; Tick(31);
+        SteamPresenceApi.Connected = true; Tick(32); // Five seconds after the extra diagnostic sample at 27.
         Check(Status == "", "disabled ticks retry and complete conditional cleanup after reconnection");
         int writes = SteamPresenceApi.WriteCalls;
         Tick(36); Check(SteamPresenceApi.WriteCalls == writes, "disabled feature never resumes publishing after cleanup");
