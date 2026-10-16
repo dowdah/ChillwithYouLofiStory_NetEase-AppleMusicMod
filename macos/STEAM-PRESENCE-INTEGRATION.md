@@ -135,6 +135,13 @@ python3 macos/tools/steam_candidate_options.py restore --record .local/steam-pre
 - 本轮 volume-core 33 项断言通过，含低音量/静音重建、快速拖动、立即退出、并发旧写入与新值、失败重试、隐私错误、严格配置及路径边界。Steam lifecycle 39、publisher 134、settings 41 项回归通过；Release 构建 0 错误、24 条既有警告。此前完整套件记录不作为本轮重新执行结果。
 - 尚未在游戏中验证低音量/静音跨重启、首声播放音量及 UI 读回；需新哈希候选。此前 458a0a9 的用户验收作为历史证据保留，不冒充新 DLL 已验收。运行中候选未替换，未 Push/PR。
 - 已准备独立 `SteamPresenceCandidate-54b443d`：源码 `54b443d24631d0e9d9d3c91848c94c04b4618f5a`，DLL SHA-256 `bf2dec86bf49e8829f903d230acd971f922d0657e88d3fc056a1bd63b4fe986d`，打包时源码工作区干净，arm64 启动预检通过。复用已验运行库和前候选必要配置，无缓存/运行数据；尚未切换启动选项。等待用户正常退出后，刷新必要配置副本再建立独立恢复记录，保留 458a0a9 和原 ExperienceLayoutCandidate。
+- 用户随后明确确认 Mac 游戏与 Steam 已退出并允许切换。主机进程检查通过后刷新必要配置副本，arm64 预检再次通过；先恢复 ExperienceLayoutCandidate，再切换并读回为 `SteamPresenceCandidate-54b443d/launch-core.sh`。DLL 哈希复核不变；独立恢复记录 `.local/steam-presence-candidate-54b443d/switch.json` 与同名 VDF 备份均为 0600，可直接回退至 ExperienceLayoutCandidate。旧目录未覆盖，尚未启动修复版或宣称音量实机验收通过。
+
+音量修复候选当前回退命令（先正常退出 Mac 游戏和 Steam）：
+
+```sh
+python3 macos/tools/steam_candidate_options.py restore --record .local/steam-presence-candidate-54b443d/switch.json
+```
 
 60 分钟长稳及 Intel 实机按原约定为 NotRun，不扩充交付门槛。任何功能代码修复须新候选并重验受影响场景；纯文档提交不改变受测 DLL，记录其对应实现提交。
 
