@@ -59,6 +59,16 @@ python3 macos/tools/steam_candidate_options.py restore --record .local/steam-pre
 
 使用 `macos/dist/SteamPresenceCandidate-<commit>`，固定复用 ExperienceLayoutCandidate 已验证运行库及原生库，独立清单记录源码、主配置/Presence schema、游戏程序集和库哈希。仅复制必要配置；不复制旧缓存/日志/运行数据，不使用硬编码 ChillMusicMac 的升级工具。原目录保留，切换使用独立备份记录及原值冲突校验。
 
+第二个候选 `SteamPresenceCandidate-0f946a9` 已打包：源码 `0f946a963c4a4cdd0548e5d9d200b326ba754e4d`，DLL SHA-256 `7ff542401a9dfd888ebfbd45e3b41bee26c8be56414f08f0261717779b38e407`，包含诊断小数秒与音乐优先调整。托管构建、120 项发布断言、33 项生命周期断言及 arm64 启动预检通过，配置继续保持 Enabled=false、ShareTrackTitle=false。复制前一个候选必要配置及同一已验原生库，没有复制缓存/日志/运行数据。尝试切换时确认游戏已退出但 Mac `steam_osx` 仍运行，恢复工具在写入前拒绝；当前启动目标仍为 67d54dd，新候选切换记录尚未创建。等待正常退出 Mac Steam 后再切换，不强制终止进程。
+
+用户随后确认退出后，工具复查通过：先将首候选恢复至原 ExperienceLayoutCandidate，再建立新候选独立切换记录，已切换并读回确认为 `SteamPresenceCandidate-0f946a9/launch-core.sh`。恢复记录 `.local/steam-presence-candidate-0f946a9/switch.json` 权限为 0600，直接回退至 ExperienceLayoutCandidate，不需串联旧候选；同名 VDF 备份存在。DLL 哈希再次匹配，Enabled=false、ShareTrackTitle=false。新候选实际启动与受影响场景仍待验收，未 Push/PR。
+
+当前候选的回退命令（须先正常退出 Mac 游戏与 Steam）：
+
+```sh
+python3 macos/tools/steam_candidate_options.py restore --record .local/steam-presence-candidate-0f946a9/switch.json
+```
+
 2026-10-16 22:33（Asia/Shanghai）首批只读运行观察：候选 1.6.0.0 已加载；独立设置界面确认启用关闭、曲名公开关闭。诊断显示 Steam 已就绪、发布次数 0、最后成功无、最近错误无；番茄钟与正计时均已观察到真实实例。当前无活动计时器，快照为 Pomodoro/Idle/None，已过与剩余均为 0，预览无可展示内容。此处证明实例绑定和默认不发布，不代表运行/暂停/阶段时间语义已验收。本机证据 `.local/steam-presence-candidate-67d54dd/screenshots/disabled-idle.png`，不纳入 Git。
 
 完整验收进行中，以下场景仍 Pending：
