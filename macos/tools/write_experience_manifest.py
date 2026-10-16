@@ -91,7 +91,9 @@ def main():
     if args.game_managed:
         manifest["gameAssemblies"] = {name: sha256(args.game_managed / name) for name in
                                       ("Assembly-CSharp.dll", "com.rlabrecque.steamworks.net.dll")}
-    manifest["presenceConfigSchema"] = None  # Manual probe only; no production presence configuration.
+    presence_source = ROOT / "macos/src/MusicBridge/SteamPresenceOptions.cs"
+    manifest["presenceConfigSchema"] = int(source_number(presence_source,
+        r'CurrentSchemaVersion\s*=\s*(\d+)')) if presence_source.is_file() else None
     destination = candidate / "release-manifest.json"
     destination.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(destination)
