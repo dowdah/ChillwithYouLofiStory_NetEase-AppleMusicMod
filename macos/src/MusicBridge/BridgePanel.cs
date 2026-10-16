@@ -784,7 +784,7 @@ internal static class BridgePanel
 		_volumeIcon.preserveAspect = true;
 		_volumeIcon.color = new Color(1f, 1f, 1f, 0.85f);
 		_volumeSlider = UiKit.CreateBarSlider(gameObject.transform, interactable: true, 76f);
-		_volumeSlider.value = 0.7f;
+		_volumeSlider.SetValueWithoutNotify(Mathf.Clamp01(MusicModules.Current.Volume));
 		_volumeSlider.onValueChanged.AddListener(delegate(float v)
 		{
 			MusicTransport.SetVolume(v);

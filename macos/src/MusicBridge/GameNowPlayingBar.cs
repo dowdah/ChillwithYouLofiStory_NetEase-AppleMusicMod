@@ -73,7 +73,7 @@ internal static class GameNowPlayingBar
 
 	private static bool _wasDragging;
 
-	private static float _lastGameVolume = -1f;
+	private static readonly GameVolumeRelay VolumeRelay = new GameVolumeRelay();
 
 	private static readonly HashSet<int> DirectBoundButtons = new HashSet<int>();
 
@@ -180,7 +180,7 @@ internal static class GameNowPlayingBar
 				return;
 			}
 			_taken = false;
-			_lastGameVolume = -1f;
+			VolumeRelay.Reset();
 			_gameTitleBackup = _titleText.text;
 			_gameArtistBackup = _artistText.text;
 			EnsureLyricLine();
@@ -541,6 +541,9 @@ internal static class GameNowPlayingBar
 			return;
 		}
 		IMusicModule current = MusicModules.Current;
+		// Observe game/idle ownership too, before the early return below.
+		if (_volumeSlider != null && VolumeRelay.Observe(current, _volumeSlider.value))
+			BridgePanel.SyncVolumeSlider(_volumeSlider.value);
 		bool flag = current.Id == MusicProvider.GameBuiltIn;
 		if (flag || !current.HasTrack)
 		{
@@ -624,20 +627,6 @@ internal static class GameNowPlayingBar
 				{
 					_progressSlider.value = num;
 				}
-			}
-		}
-		if (_volumeSlider != null)
-		{
-			float value = _volumeSlider.value;
-			if (_lastGameVolume < 0f)
-			{
-				_lastGameVolume = value;
-			}
-			if (Mathf.Abs(value - _lastGameVolume) > 0.001f)
-			{
-				current.SetVolume(value);
-				_lastGameVolume = value;
-				BridgePanel.SyncVolumeSlider(value);
 			}
 		}
 		UpdateAllPlayButtons(_playSprite, _pauseSprite, current.IsPlaying, bridgeActive: true);

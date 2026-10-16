@@ -1,0 +1,307 @@
+{
+  "queriedAt": "2026-10-16",
+  "timezone": "Asia/Shanghai",
+  "method": "Community.GetAppRichPresenceLocalization#1",
+  "client": "steam-user@5.3.0",
+  "authentication": "user-approved temporary login; credentials not retained",
+  "queries": [
+    {
+      "at": "2026-10-16T10:57:04.076Z",
+      "event": "localization_result",
+      "appid": 394360,
+      "language": "english",
+      "eresult": 1,
+      "responseAppId": 394360,
+      "tokenLists": [
+        {
+          "tokens": [
+            {
+              "name": "#PlayingAs",
+              "value": "Playing as %country% in %year%"
+            }
+          ],
+          "language": "english"
+        }
+      ]
+    },
+    {
+      "at": "2026-10-16T10:57:04.623Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "japanese",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:05.225Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "tchinese",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:05.789Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "koreana",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:06.331Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "russian",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:06.884Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "brazilian",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:07.479Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "portuguese",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:08.034Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "english",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:08.579Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "schinese",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:09.129Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "arabic",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:09.677Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "bulgarian",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:10.231Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "czech",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:10.781Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "danish",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:11.333Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "dutch",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:11.877Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "finnish",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:12.425Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "french",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:12.974Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "german",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:13.527Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "greek",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:14.079Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "hungarian",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:14.625Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "indonesian",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:15.173Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "italian",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:15.727Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "malay",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:16.278Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "norwegian",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:16.827Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "polish",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:17.378Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "romanian",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:17.925Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "spanish",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:18.476Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "latam",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:19.023Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "swedish",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:19.574Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "thai",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:20.124Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "turkish",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:20.675Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "ukrainian",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    },
+    {
+      "at": "2026-10-16T10:57:21.226Z",
+      "event": "localization_result",
+      "appid": 3548580,
+      "language": "vietnamese",
+      "eresult": 1,
+      "responseAppId": 3548580,
+      "tokenLists": []
+    }
+  ]
+}

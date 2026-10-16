@@ -138,25 +138,6 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		}
 	}
 
-	public float Volume
-	{
-		get
-		{
-			if (!(_source != null))
-			{
-				return 0f;
-			}
-			return _source.volume;
-		}
-		set
-		{
-			if (_source != null)
-			{
-				_source.volume = Mathf.Clamp01(value);
-			}
-		}
-	}
-
 	public float PositionSeconds
 	{
 		get
@@ -226,7 +207,9 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		_source = base.gameObject.AddComponent<AudioSource>();
 		_source.playOnAwake = false;
 		_source.loop = false;
-		_source.volume = 0.7f;
+		_volumeStore = new PlayerVolumeStore(BridgePaths.Resolve("config", "musicbridge.volume.json"));
+		_source.volume = _volumeStore.Volume;
+		ReportVolumeError();
 		_source.spatialBlend = 0f;
 		_source.bypassEffects = true;
 		_source.bypassListenerEffects = true;
@@ -999,6 +982,8 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 
 	private void Update()
 	{
+        _volumeStore?.Tick(Time.realtimeSinceStartup);
+        ReportVolumeError();
         TickPrefetch();
 		// A null output can keep advancing time. Do not skip through the queue while recovering.
 		if (AudioOutputRecovery.OutputUnavailable) return;
@@ -1098,6 +1083,8 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 
 	private void OnApplicationQuit()
     {
+        _volumeStore?.Close();
+        ReportVolumeError();
         Stop();
 		BridgeLog.Info("游戏退出：停止 MusicBridge 音频与下载。");
 		AbortActiveRequest();
@@ -1111,10 +1098,13 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 
 	private void OnDestroy()
 	{
+        _volumeStore?.Close();
+        ReportVolumeError();
         CancelPrefetch();
 		AbortActiveRequest();
 		CancelUrlLookup();
 		_generation++;
 		ReleaseClip();
 	}
+
 }

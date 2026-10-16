@@ -7,7 +7,7 @@ internal readonly struct PlaybackSnapshot
     public readonly MusicProvider Owner;
     public readonly long OwnerEpoch;
     public readonly int PlaybackGeneration;
-    public readonly string TrackKey, Title, Artist;
+    public readonly string TrackKey, Title, Artist, TrackArtist;
     public readonly PlaybackState State;
     public readonly bool DesiredPlaying, CanPlay, CanPause, CanNext, CanPrevious, CanSeek, SupportsLyrics;
     public readonly double Position, Duration;
@@ -15,10 +15,10 @@ internal readonly struct PlaybackSnapshot
     public PlaybackSnapshot(MusicProvider owner, long ownerEpoch, int generation, string trackKey,
         string title, string artist, PlaybackState state, bool desiredPlaying, bool canPlay,
         bool canPause, bool canNext, bool canPrevious, bool canSeek, bool supportsLyrics,
-        double position, double duration, float volume)
+        double position, double duration, float volume, string trackArtist)
     {
         Owner = owner; OwnerEpoch = ownerEpoch; PlaybackGeneration = generation;
-        TrackKey = trackKey; Title = title; Artist = artist; State = state;
+        TrackKey = trackKey; Title = title; Artist = artist; TrackArtist = trackArtist; State = state;
         DesiredPlaying = desiredPlaying; CanPlay = canPlay; CanPause = canPause;
         CanNext = canNext; CanPrevious = canPrevious; CanSeek = canSeek;
         SupportsLyrics = supportsLyrics; Position = position; Duration = duration; Volume = volume;
@@ -48,8 +48,10 @@ internal static class PlaybackSnapshotService
             "netease:" + player.CurrentTrack.Id : module.Id + ":" + module.Title + ":" + module.Artist;
         PlaybackState state = !hasTrack ? PlaybackState.Idle :
             player != null ? player.State : module.IsPlaying ? PlaybackState.Playing : PlaybackState.Paused;
-        if (player != null && (player.IsBuffering || AudioOutputRecovery.OutputUnavailable) &&
-            state == PlaybackState.Playing) state = PlaybackState.Loading;
+        bool unityOutputUnavailable = (module.Id == MusicProvider.Netease || module.Id == MusicProvider.GameBuiltIn) &&
+            AudioOutputRecovery.OutputUnavailable;
+        if (state == PlaybackState.Playing && ((player != null && player.IsBuffering) || unityOutputUnavailable))
+            state = PlaybackState.Loading;
         bool desiredPlaying = player != null ? player.DesiredPlaying : module.IsPlaying;
         double duration = hasTrack ? module.Duration : 0;
         if (double.IsNaN(duration) || double.IsInfinity(duration) || duration < 0) duration = 0;
@@ -62,6 +64,6 @@ internal static class PlaybackSnapshotService
             state, desiredPlaying, hasTrack && !desiredPlaying, hasTrack && desiredPlaying,
             MusicTransport.CanNext, MusicTransport.CanPrevious, canSeek,
             hasTrack && module.SupportsLyrics, position,
-            duration, module.Volume);
+            duration, module.Volume, hasTrack ? module.TrackArtist : null);
     }
 }

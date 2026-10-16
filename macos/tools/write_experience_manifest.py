@@ -43,6 +43,8 @@ def main():
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--native-core-digest", required=True)
     parser.add_argument("--native-core-provenance", choices=("cached", "source-rebuild"), default="cached")
+    parser.add_argument("--baseline", default="main", help="Verified baseline ref (resolved to a commit)")
+    parser.add_argument("--game-managed", type=Path, help="Optional installed game Managed directory")
     args = parser.parse_args()
     candidate = args.candidate.resolve()
     binaries = {}
@@ -72,7 +74,7 @@ def main():
     manifest = {
         "sourceCommit": command("git", "rev-parse", "HEAD"),
         "sourceWorkingTreeDirty": bool(command("git", "status", "--porcelain", "--untracked-files=no")),
-        "baselineCommit": "3084e9f411d0290dcee43b1961848fcb302c5fb0",
+        "baselineCommit": command("git", "rev-parse", args.baseline + "^{commit}"),
         "pluginVersion": plugin_version + "-candidate",
         "configSchema": config_schema,
         "mediaAbi": media_abi,
@@ -81,11 +83,18 @@ def main():
         "nativeCoreProvenance": args.native_core_provenance,
         "buildHost": {"macOS": platform.mac_ver()[0], "cpu": platform.machine()},
         "binaries": binaries,
+        "runtimeFiles": {name: sha256(candidate / name) for name in ("libdoorstop.dylib", "launch-core.sh")},
         "gameHostAcceptance": "NotRun",
         "intelGameAcceptance": "NotRun",
         "oneHourFinalSoak": "NotRun",
         "realRollback": "NotRun",
     }
+    if args.game_managed:
+        manifest["gameAssemblies"] = {name: sha256(args.game_managed / name) for name in
+                                      ("Assembly-CSharp.dll", "com.rlabrecque.steamworks.net.dll")}
+    presence_source = ROOT / "macos/src/MusicBridge/SteamPresenceOptions.cs"
+    manifest["presenceConfigSchema"] = int(source_number(presence_source,
+        r'CurrentSchemaVersion\s*=\s*(\d+)')) if presence_source.is_file() else None
     destination = candidate / "release-manifest.json"
     destination.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(destination)

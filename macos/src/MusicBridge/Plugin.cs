@@ -4,14 +4,14 @@ using HarmonyLib;
 
 namespace MusicBridge;
 
-[BepInPlugin("com.chillwithyou.musicbridge", "Chill With You Music Bridge", "1.5.0.0")]
+[BepInPlugin("com.chillwithyou.musicbridge", "Chill With You Music Bridge", "1.6.0.0")]
 public class Plugin : BaseUnityPlugin
 {
 	public const string PluginGuid = "com.chillwithyou.musicbridge";
 
 	public const string PluginName = "Chill With You Music Bridge";
 
-	public const string PluginVersion = "1.5.0.0";
+	public const string PluginVersion = "1.6.0.0";
 
 	private Harmony _harmony;
 
@@ -25,7 +25,7 @@ public class Plugin : BaseUnityPlugin
 		//IL_003e: Unknown result type (might be due to invalid IL or missing references)
 		//IL_0048: Expected O, but got Unknown
 		BridgeLog.Init(Logger);
-		BridgeLog.Info("Chill With You Music Bridge 1.5.0.0 macOS 验收候选正在通过 BepInEx 加载。");
+		BridgeLog.Info("Chill With You Music Bridge " + PluginVersion + " macOS 验收候选正在通过 BepInEx 加载。");
 		BridgeLog.Info("插件目录已就绪（BepInEx\\plugins 下）。");
 		MusicBridgeOptions.Load();
 		try
@@ -37,6 +37,7 @@ public class Plugin : BaseUnityPlugin
 			ITunesNameHub.LoadStorefront();
 			_harmony = new Harmony("com.chillwithyou.musicbridge");
 			BridgePatches.ApplyAll(_harmony);
+			SteamPresenceService.Initialize(_harmony);
 			BridgeLog.Info("Harmony 挂钩流程结束（挂上不代表回调已执行，见后续 invoked 日志）。");
 			NeteaseService.BeginRestore();
 		}

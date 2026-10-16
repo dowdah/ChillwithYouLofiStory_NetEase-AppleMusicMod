@@ -64,6 +64,8 @@ internal sealed class NeteaseModule : IMusicModule
 
 	public double Position => (P != null) ? P.PositionSeconds : 0f;
 
+	public string TrackArtist => P?.CurrentTrack?.Artists;
+
 	public double Duration => (P != null) ? P.DurationSeconds : 0f;
 
 	public bool CanSeek => P != null && P.CurrentTrack != null && (P.State == PlaybackState.Playing || P.State == PlaybackState.Paused);

@@ -44,6 +44,9 @@ internal sealed class AppleModule : IMusicModule
 
 	public double Position => AppleMusicService.GetPosition();
 
+	public string TrackArtist => AppleMusicService.NowPlaying?.Valid == true
+		? AppleMusicService.NowPlaying.Artist : null;
+
 	public double Duration => AppleMusicService.Duration;
 
 	public bool CanSeek => true;

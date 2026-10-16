@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/MusicBridge/TimerSnapshot.cs;../../src/MusicBridge/TimerInstanceReader.cs;../../src/MusicBridge/TimerSnapshotService.cs;Program.cs;GameFakes.cs;RuntimeFakes.cs" />
+  </ItemGroup>
+</Project>
