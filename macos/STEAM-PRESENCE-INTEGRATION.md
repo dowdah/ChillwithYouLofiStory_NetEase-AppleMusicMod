@@ -99,6 +99,20 @@ python3 macos/tools/steam_candidate_options.py restore --record .local/steam-pre
 
 用户随后明确同意将开关扩展为“公开曲名和歌手”。本轮将实际播放快照的 Artist 接入同一隐私开关；未开启开关时二者均隐藏。按用户的条件性要求，播放中的完整音乐信息与计时器超过字节上限时先省略计时器，正常长度仍共同显示。此前 0f946a9 的“超长曲名也保留计时器”策略已被本轮替代。新行为的发布 134 项、生命周期 39 项、配置 41 项测试及 Release 构建通过（24 条既有警告）；真实游戏和好友端尚待新候选验收，未改运行中 DLL、未开启公开、未 Push/PR。
 
+曲名和歌手候选已打包并在用户确认退出后切换：
+
+- 源码 `458a0a9e7aefde68201f833652db8237527be685`，打包时源码工作区干净；目录 `macos/dist/SteamPresenceCandidate-458a0a9`。
+- DLL SHA-256 `0da1252642ce457d5af06873dcfb72c3867fa34ebccca26bda69f9cc58e18e78`；复用同一已验核心及原生库，清单记录全部哈希。arm64 启动预检通过，不等于实际启动验收。
+- 仅复制前候选必要配置、未复制缓存/日志/运行数据；Enabled=false、ShareTrackTitle=false 保持不变。
+- 工具确认 Mac 游戏和 Steam 均已退出后，先恢复原 ExperienceLayoutCandidate，再建立独立切换记录并读回新版启动路径。旧目录均保留，新记录 `.local/steam-presence-candidate-458a0a9/switch.json` 可直接恢复 ExperienceLayoutCandidate。
+- 实机下一步先保持发布关闭，在本地预览验证“公开曲名和歌手”草稿；好友端真实发布与其余完整验收仍 Pending。本段为打包后的纯文档记录，不改变受测实现。
+
+当前最新候选的回退命令（须先正常退出 Mac 游戏与 Steam）：
+
+```sh
+python3 macos/tools/steam_candidate_options.py restore --record .local/steam-presence-candidate-458a0a9/switch.json
+```
+
 60 分钟长稳及 Intel 实机按原约定为 NotRun，不扩充交付门槛。任何功能代码修复须新候选并重验受影响场景；纯文档提交不改变受测 DLL，记录其对应实现提交。
 
 最终用户确认通过前不 Push、不 PR。PR 面向 origin/main，仓库 `dowdah/ChillwithYouLofiStory_NetEase-AppleMusicMod`；创建后关联当前任务，检查远端 CI，不自动合并。
