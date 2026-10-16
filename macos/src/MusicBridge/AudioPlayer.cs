@@ -25,6 +25,8 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 	private static AudioPlayer _instance;
 
 	private AudioSource _source;
+	private PlayerVolumeStore _volumeStore;
+	private string _lastVolumeError;
 
 	private int _generation;
 	private long _sessionEpoch;
@@ -150,9 +152,11 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		}
 		set
 		{
+			if (float.IsNaN(value) || float.IsInfinity(value)) return;
 			if (_source != null)
 			{
 				_source.volume = Mathf.Clamp01(value);
+				_volumeStore?.Set(_source.volume, Time.realtimeSinceStartup);
 			}
 		}
 	}
@@ -226,7 +230,9 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 		_source = base.gameObject.AddComponent<AudioSource>();
 		_source.playOnAwake = false;
 		_source.loop = false;
-		_source.volume = 0.7f;
+		_volumeStore = new PlayerVolumeStore(BridgePaths.Resolve("config", "musicbridge.volume.json"));
+		_source.volume = _volumeStore.Volume;
+		ReportVolumeError();
 		_source.spatialBlend = 0f;
 		_source.bypassEffects = true;
 		_source.bypassListenerEffects = true;
@@ -999,6 +1005,8 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 
 	private void Update()
 	{
+        _volumeStore?.Tick(Time.realtimeSinceStartup);
+        ReportVolumeError();
         TickPrefetch();
 		// A null output can keep advancing time. Do not skip through the queue while recovering.
 		if (AudioOutputRecovery.OutputUnavailable) return;
@@ -1098,6 +1106,8 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 
 	private void OnApplicationQuit()
     {
+        _volumeStore?.Close();
+        ReportVolumeError();
         Stop();
 		BridgeLog.Info("游戏退出：停止 MusicBridge 音频与下载。");
 		AbortActiveRequest();
@@ -1111,10 +1121,19 @@ internal sealed partial class AudioPlayer : MonoBehaviour
 
 	private void OnDestroy()
 	{
+        _volumeStore?.Close();
+        ReportVolumeError();
         CancelPrefetch();
 		AbortActiveRequest();
 		CancelUrlLookup();
 		_generation++;
 		ReleaseClip();
 	}
+
+    private void ReportVolumeError()
+    {
+        string error = _volumeStore?.LastError;
+        if (error != null && error != _lastVolumeError) BridgeLog.Warn(error);
+        _lastVolumeError = error;
+    }
 }

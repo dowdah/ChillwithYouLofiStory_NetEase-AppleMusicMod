@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GameManagedDir Condition="'$(GameManagedDir)' == ''">$(HOME)/Library/Application Support/Steam/steamapps/common/Chill with You Lo-Fi Story/Chill With You.app/Contents/Resources/Data/Managed</GameManagedDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(GameManagedDir)/Newtonsoft.Json.dll</HintPath></Reference>
+    <Compile Include="Program.cs;../../src/MusicBridge/PlayerVolumeStore.cs;../../src/MusicBridge/AtomicFile.cs;../../src/MusicBridge/BridgePaths.cs" />
+  </ItemGroup>
+</Project>
