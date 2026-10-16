@@ -413,6 +413,11 @@ internal sealed class SettingsPanelUi : MonoBehaviour
         var second = UiKit.CreatePillButton(_content.transform, "发布固定测试 B", false, UiKit.LineColor, 30f, 180f);
         second.interactable = SteamPresenceProbeService.CanPublish;
         second.onClick.AddListener(SteamPresenceProbeService.PublishB);
+        Note("纯文本 status 实验：只设置 status，不添加或清除 steam_display。下方为固定测试内容，不读取真实曲名或计时器。好友请分别查看列表、悬停卡片和“查看游戏信息”。");
+        UiKit.CreatePillButton(_content.transform, "status 音乐测试 A", false, UiKit.LineColor, 30f, 210f)
+            .onClick.AddListener(SteamPresenceProbeService.PublishStatusA);
+        UiKit.CreatePillButton(_content.transform, "status 计时器测试 B", false, UiKit.LineColor, 30f, 210f)
+            .onClick.AddListener(SteamPresenceProbeService.PublishStatusB);
         UiKit.CreatePillButton(_content.transform, "结束测试并恢复", false, UiKit.LineColor, 30f, 180f)
             .onClick.AddListener(SteamPresenceProbeService.Stop);
     }

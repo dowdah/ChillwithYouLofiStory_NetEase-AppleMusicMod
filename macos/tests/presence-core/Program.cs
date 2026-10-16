@@ -78,8 +78,55 @@ internal static class Program
         fake = new Fake(); probe = new SteamPresenceProbe(fake, Profiles); probe.Publish(false, 0);
         fake.Values["test_text"] = "game-changed"; probe.Shutdown();
         Check(fake.Values["test_text"] == "game-changed" && !fake.Values.ContainsKey("steam_display"), "exit preserves externally changed value");
+        TestStatusOnly();
         TestReflectionAdapter();
         Console.WriteLine("PASS: " + _checks + " Steam presence assertions (fake Steam only)");
+    }
+
+    private static void TestStatusOnly()
+    {
+        var fake = new Fake(); fake.Values["untouched"] = "original";
+        var probe = new SteamPresenceProbe(fake, SteamPresenceProbeCatalog.Profiles);
+        probe.PublishStatus(false, 0);
+        Check(probe.Active && fake.Values["status"] == SteamPresenceProbe.StatusTextA, "status A works without a template");
+        Check(fake.Order.TrueForAll(key => key == "status") && !fake.Values.ContainsKey("steam_display"), "status-only never writes template or unrelated keys");
+        probe.PublishStatus(true, 1);
+        Check(fake.Values["status"] == SteamPresenceProbe.StatusTextB && !fake.Values.ContainsKey("steam_display"), "status B updates without a template");
+        probe.Tick(120); Check(probe.Active, "status B extends timeout");
+        probe.Tick(121);
+        Check(!probe.Active && fake.Values.Count == 1 && fake.Values["untouched"] == "original", "status timeout restores absence and unrelated keys");
+
+        fake = new Fake(); fake.Values["status"] = "old-status";
+        probe = new SteamPresenceProbe(fake, Profiles); probe.PublishStatus(false, 0);
+        int writes = fake.Writes; probe.Publish(false, 1);
+        Check(fake.Writes == writes && !fake.Values.ContainsKey("steam_display"), "template test cannot mix into active status test");
+        probe.Stop(2); Check(fake.Values["status"] == "old-status", "status restores original value");
+
+        fake = new Fake(); fake.Values["steam_display"] = "#Original";
+        probe = new SteamPresenceProbe(fake, Profiles); probe.PublishStatus(false, 0);
+        Check(fake.Writes == 0, "preexisting display prevents pure status experiment");
+
+        fake = new Fake(); probe = new SteamPresenceProbe(fake, Profiles); probe.Publish(false, 0);
+        writes = fake.Writes; probe.PublishStatus(false, 1);
+        Check(fake.Writes == writes && !fake.Values.ContainsKey("status"), "status cannot mix into template experiment");
+        probe.Stop(2);
+
+        fake = new Fake(); probe = new SteamPresenceProbe(fake, SteamPresenceProbeCatalog.Profiles);
+        probe.PublishStatus(false, 0); fake.Values["status"] = "external";
+        probe.PublishStatus(true, 1);
+        Check(!probe.Active && fake.Values["status"] == "external", "status external takeover preserved");
+
+        fake = new Fake(); probe = new SteamPresenceProbe(fake, SteamPresenceProbeCatalog.Profiles);
+        probe.PublishStatus(false, 0); fake.Values["steam_display"] = "#NewGameTemplate";
+        probe.PublishStatus(true, 1);
+        Check(!probe.Active && !fake.Values.ContainsKey("status") && fake.Values["steam_display"] == "#NewGameTemplate", "new external template stops status experiment without touching template");
+
+        fake = new Fake(); fake.Values["status"] = "before";
+        probe = new SteamPresenceProbe(fake, SteamPresenceProbeCatalog.Profiles); probe.PublishStatus(false, 0);
+        fake.RejectKey = "status"; probe.PublishStatus(true, 1);
+        Check(probe.Active, "rejected status B retains pending cleanup");
+        fake.RejectKey = null; probe.Tick(6);
+        Check(!probe.Active && fake.Values["status"] == "before", "failed status B recovers prior state");
     }
 
     private static void TestReflectionAdapter()
