@@ -42,6 +42,21 @@
 
 ## 候选与验收
 
+首个候选已于 2026-10-16 打包并通过 arm64 启动预检：
+
+- 源码提交：`67d54dd135693876957981ccc8ee63d3a661f68c`（实现阶段提交 `6fb31e8`、`446db5a`、`f563e77`；后续为测试/清单/文档）。
+- 目录：`macos/dist/SteamPresenceCandidate-67d54dd`。
+- DLL SHA-256：`ab8381d0ed6357a7befa09ae7a637a4e55e57c7f3222935bd6f8d0a3e5cce65d`。
+- 核心库摘要：`9d5743f020979d255275bc5728bbc8603e6f62a6cfb15f42e3b1ecc94b73cd1b`；完整库/启动器/游戏程序集哈希在候选 `release-manifest.json`。
+- 打包时源码工作区干净；Presence 配置从公开默认样例复制，Enabled=false、ShareTrackTitle=false。主配置与窗口布局从旧候选复制，未复制 cache/data/logs。
+- 确认 Mac Steam 与游戏退出后已切换本游戏的启动选项；旧目标为 `ExperienceLayoutCandidate/launch-core.sh`。独立恢复记录 `.local/steam-presence-candidate-67d54dd/switch.json` 和同名 VDF 备份均保留。本文的候选记录是后续纯文档更新，不改变受测实现。
+
+如候选启动失败，先正常退出 Mac 游戏和 Steam，再运行：
+
+```sh
+python3 macos/tools/steam_candidate_options.py restore --record .local/steam-presence-candidate-67d54dd/switch.json
+```
+
 使用 `macos/dist/SteamPresenceCandidate-<commit>`，固定复用 ExperienceLayoutCandidate 已验证运行库及原生库，独立清单记录源码、主配置/Presence schema、游戏程序集和库哈希。仅复制必要配置；不复制旧缓存/日志/运行数据，不使用硬编码 ChillMusicMac 的升级工具。原目录保留，切换使用独立备份记录及原值冲突校验。
 
 本次真实验收尚未开始，以下均 Pending：
