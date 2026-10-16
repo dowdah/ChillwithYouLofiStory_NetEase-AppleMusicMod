@@ -32,7 +32,44 @@ REA 分析尝试先受沙箱辅助程序编译限制；宿主执行进入 JavaSc
 
 - presence-core：45 项模拟断言通过（包括仅写 status、A/B、超时、外部接管、模板混合拒绝、失败恢复）。不向真实好友发布。
 - 托管 Release 构建通过，24 条既有警告，无错误。
-- 真实游戏 Steam API、Windows 好友列表、悬停卡片、查看游戏信息、A/B 更新和恢复：待测。
+- Python 启动配置相关 9 项、运行库升级/恢复 4 项测试通过；shuffle-core / lyrics-core / media-core 通过。
+- 完整 Bridge.Tests 两次在 `FlacTests.ProgressiveCancellation` 第 372 行的释放等待中超时（`FLAC test deadline`），第二次为无并行编译的同一产物重跑。这些测试及相关源码与基线没有差异，且该测试项目未编译本次 Presence 源码；原因未定位，不将整套回归记为通过，不在本调查中扩大到 FLAC 修复。
+- 真实游戏 Steam API：A、B 均返回 true，读回一致且无 steam_display；Windows 好友端游戏详情均显示对应文本，B 自动更新由用户确认。
+- Windows 好友列表：A/B 对照均只显示游戏名，不显示测试文字。悬停卡片、好友端清理和精确传播耗时：待验证。
 - 完整音乐/计时器功能、长期稳定性和 Intel 实机：未执行。
 
 Windows 11 Parallels 虚拟机的独立好友账号已登录，作为观察端；不发送聊天消息，不改观察账号状态或配置。截图含账号资料时仅本机保存，不纳入 Git。
+
+### A 首轮与菜单缺失复查
+
+游戏运行日志确认：初始 AppID 3548580、键数 0；A 调用返回 true，读回键数 1、status 为固定 A、steam_display 不存在；之后记录有条件恢复完成。Windows 好友列表观察到仍仅显示游戏名。用户随后提供的右键菜单截图没有“查看游戏信息”；由于未将截图时间与发布存续区间同步，不能据此判定 status 始终无法到达好友端，也不能把详情可见记为通过。
+
+Mac Steam 重启后，当前 `sp.js` 哈希已变为 `61048fac50966b6a9ba79ec5a4895a292872d7959b6e93cfa83f47149d3e75e6`（不能沿用上表旧偏移定位新文件）。定向原文检查发现：字节 1831411 附近的菜单构建只有在好友对象存在、非 Gamepad UI，且 `has_server_ip || HasRichPresenceForViewGameInfo()` 为真时加入该入口；字节 6355443 的后者仍检查 status/connect/connect_private。这是本机 Mac 客户端静态条件，不冒充 Windows 客户端已收到 status 的实测证据。
+
+因此第二轮改为在 120 秒清理前重新发布 A、关闭并重新打开 Windows 好友右键菜单，配对游戏日志与好友端截图；不要求用户在无入口的菜单内反复寻找。
+
+### 第二轮 A：好友端详情可见已证实
+
+2026-10-16 19:36（Asia/Shanghai），游戏日志第 80 行再次确认 A 写入成功、读回一致、没有 steam_display。独立 Windows 好友账号的“游戏信息”窗口“状态”栏实际显示完整固定文本 A（窗口内自动折行），旁边好友列表仍仅显示游戏名称。这证明在本游戏 AppID 下无需模板即可向好友的游戏详情传递 status；不证明好友列表主行可自定义，也不证明实际音乐/计时器接入。
+
+本机截图：`.local/steam-status-probe-60618f3/screenshots/windows-status-a-second.png`，SHA-256 `f7ba744b8d0d19f8bb978e90d01e7a3834f6a3f8152cedf2aab04eea6d29af91`，不纳入 Git。首轮菜单缺失不能作为方案不可用证据。
+
+### B：好友端自动更新
+
+2026-10-16 19:38（Asia/Shanghai），游戏日志第 82 行确认仅 status 写入 B、读回一致。Windows 同一“游戏信息 → 状态”栏实际显示 `MusicBridge 计时器测试 B · 专注中，剩余 24 分钟`；用户明确反馈是自动更新，无需手动刷新。画面同时显示好友列表仍只有游戏名。本次没有同步的端到端时钟记录，因此不报告精确秒数延迟。
+
+本机截图：`.local/steam-status-probe-60618f3/screenshots/windows-status-b.png`，SHA-256 `2e3d2c58a8f72bc87245f1ffbbdd88b840a89db8274d3bd90648f06eba2784e8`，不纳入 Git。这里只证明两段固定纯文本可发布和变化，未实现真实曲目与番茄钟数据读取。
+
+## 本次受测候选
+
+- 实现提交：`60618f313aec69063b48145e45affea58f07d079`。
+- 目录：`macos/dist/SteamStatusProbe-60618f3`。
+- 托管 DLL SHA-256：`18438732999bc8ab9c4fa448af89efec6f16ab8963977efcd1915def3bc1246d`。
+- 核心运行库摘要：`9d5743f020979d255275bc5728bbc8603e6f62a6cfb15f42e3b1ecc94b73cd1b`；原生音频/媒体库哈希与 ExperienceLayoutCandidate 相同，详见候选 release-manifest。
+- 已验证启动目标切换、arm64 启动预检及 BepInEx/插件加载；Harmony 22/22。未把启动成功计为 Presence API 或好友端验收。
+- 仅复制 BepInEx 配置及主配置；未复制旧 cache/data/logs。原运行目录不变，原启动选项保存在忽略目录 `.local/steam-status-probe-60618f3/switch.json` 及同名 VDF 备份。
+- 本轮测试结束后需正常退出 Mac 游戏与 Steam，再执行恢复；不要在 Steam 运行时直接写 VDF。
+
+```sh
+python3 macos/tools/steam_candidate_options.py restore --record .local/steam-status-probe-60618f3/switch.json
+```
